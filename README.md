@@ -13,7 +13,9 @@
 - 利用料の記録と、プランごとの月間上限
 
 ## セットアップ
-1. Supabase プロジェクトを作り、`supabase/migrations/` と `supabase/seed.sql` を適用
+1. Supabase プロジェクトを作り、DB 定義を反映する
+   - おすすめ: Supabase の Project Settings → Integrations → GitHub でこのリポジトリをつなぎ、「Deploy to production」をオン。`main` に入った `supabase/migrations/` が自動で反映される
+   - 手動の場合: `supabase/migrations/` のファイルを古い順に SQL Editor で実行
    - Authentication → Sign In / Providers で **「Allow new users to sign up」をオフ**(招待制にするため)
    - Authentication → URL Configuration に `https://<本番ドメイン>/auth/callback` を追加
 2. `.env.example` を `.env.local` にコピーして値を入れる
@@ -23,8 +25,8 @@
    npm run dev
    ```
 4. Vercel にデプロイし、同じ環境変数を設定
-   - 成果物の作成(`/api/jobs/run`)は最大 800 秒動くため **Vercel Pro 以上** を推奨
-   - 10 分おきの Cron(`vercel.json`)も Pro 以上で動く
+   - 今は Vercel Hobby(無料)に合わせ、処理時間の上限 300 秒・取りこぼし処理の Cron は 1 日 1 回(日本時間 3 時)
+   - Pro にしたら `/api/jobs/run` の `maxDuration` を 800 に、Cron を 10 分おき(`*/10 * * * *`)に戻す
 
 ## 運用コマンド
 ```bash
