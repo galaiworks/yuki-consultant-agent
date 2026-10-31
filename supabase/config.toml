@@ -1,0 +1,9 @@
+# Supabase GitHub 連携と Supabase CLI 用の設定
+project_id = "yuki-consultant-agent"
+
+[db]
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]

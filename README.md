@@ -13,7 +13,9 @@
 - 利用料の記録と、プランごとの月間上限
 
 ## セットアップ
-1. Supabase プロジェクトを作り、`supabase/migrations/` と `supabase/seed.sql` を適用
+1. Supabase プロジェクトを作り、DB 定義を反映する
+   - おすすめ: Supabase の Project Settings → Integrations → GitHub でこのリポジトリをつなぎ、「Deploy to production」をオン。`main` に入った `supabase/migrations/` が自動で反映される
+   - 手動の場合: `supabase/migrations/` のファイルを古い順に SQL Editor で実行
    - Authentication → Sign In / Providers で **「Allow new users to sign up」をオフ**(招待制にするため)
    - Authentication → URL Configuration に `https://<本番ドメイン>/auth/callback` を追加
 2. `.env.example` を `.env.local` にコピーして値を入れる
