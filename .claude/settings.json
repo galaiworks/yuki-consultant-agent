@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(npx vitest:*)"
+    ],
+    "deny": ["Read(./.env)", "Read(./.env.*)"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-files.mjs" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "cd \"$CLAUDE_PROJECT_DIR\" && node .claude/hooks/typecheck.mjs" }]
+      }
+    ]
+  }
+}
