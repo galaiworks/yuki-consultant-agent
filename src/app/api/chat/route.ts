@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "ログインが必要です" }, { status: 401 });
 
-  const access = await getAccessForCurrentUser(supabase, user.id);
+  const access = await getAccessForCurrentUser(supabase, user);
   if (!access.allowed) {
     return Response.json({ error: ACCESS_MESSAGES[access.reason], reason: access.reason }, { status: 402 });
   }
@@ -101,13 +101,18 @@ export async function POST(req: Request) {
           },
         });
         if (result.citations.length) emit({ type: "citations", items: result.citations });
-        await supabase.from("messages").insert({
-          conversation_id: convId,
-          user_id: user.id,
-          role: "assistant",
-          text: result.text,
-          citations: result.citations,
-        });
+        const { data: saved } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: convId,
+            user_id: user.id,
+            role: "assistant",
+            text: result.text,
+            citations: result.citations,
+          })
+          .select("id")
+          .single();
+        if (saved) emit({ type: "saved", id: saved.id as string });
         await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
         emit({ type: "done" });
       } catch (err) {

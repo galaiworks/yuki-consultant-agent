@@ -36,6 +36,10 @@ Claude Code がこのリポジトリで作業するときの最上位ルール�
 - `yuki-frameworks`: 思考の型(**仮版**。一般的な型を仮置き)
 - `consult-flow`: 相談の進め方
 
+## 運用と改善
+- 運用は管理画面(`/admin`)で行う。管理画面のデータは `requireAdmin()` を通した service role でだけ読み書きする
+- 回答の評価(`message_feedback`)と Guardian の採点(`evaluations`)が改善の材料。プロンプトやスキルを直すときは、まずこの 2 つを見る
+
 ## 開発の決まり
 - TypeScript strict。Claude の呼び出しは `@anthropic-ai/sdk` 経由のみ
 - DB 変更は新しいマイグレーションファイルで(既存は書き換えない)
