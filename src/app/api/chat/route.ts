@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "ログインが必要です" }, { status: 401 });
 
-  const access = await getAccessForCurrentUser(supabase, user.id);
+  const access = await getAccessForCurrentUser(supabase, user);
   if (!access.allowed) {
     return Response.json({ error: ACCESS_MESSAGES[access.reason], reason: access.reason }, { status: 402 });
   }

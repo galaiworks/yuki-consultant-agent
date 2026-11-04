@@ -21,7 +21,7 @@ export default async function BillingPage() {
   if (!user) redirect("/login");
 
   const [access, plans, subs, usage] = await Promise.all([
-    getAccessForCurrentUser(supabase, user.id),
+    getAccessForCurrentUser(supabase, user),
     supabase.from("plans").select("id, name, stripe_price_id").eq("is_active", true),
     supabase.from("subscriptions").select("plan_id, source, status, current_period_end").order("created_at", { ascending: false }),
     supabase.rpc("my_usage_this_month"),

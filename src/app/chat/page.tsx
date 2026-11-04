@@ -13,7 +13,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const access = await getAccessForCurrentUser(supabase, user.id);
+  const access = await getAccessForCurrentUser(supabase, user);
   if (!access.allowed && access.reason === "no_subscription") redirect("/redeem");
 
   const { data: conversations } = await supabase

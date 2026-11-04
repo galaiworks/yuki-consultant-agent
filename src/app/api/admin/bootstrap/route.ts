@@ -6,6 +6,20 @@ import { appConfig } from "@/lib/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+async function findAuthUserByEmail(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  email: string,
+): Promise<{ id: string } | null> {
+  for (let page = 1; page <= 50; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(error.message);
+    const hit = data.users.find((u) => u.email?.toLowerCase() === email);
+    if (hit) return { id: hit.id };
+    if (data.users.length < 200) return null;
+  }
+  return null;
+}
+
 function tokenMatches(given: string | null, expected: string): boolean {
   if (!given) return false;
   const a = Buffer.from(given);
@@ -35,7 +49,8 @@ export async function GET(req: Request) {
   if ((count ?? 0) > 0) return Response.json({ error: "すでに管理者がいます" }, { status: 409 });
 
   const password = generateTempPassword();
-  const { data: existing } = await admin.from("profiles").select("id").eq("email", email).maybeSingle();
+  // profiles.email は本人が書き換えられるので、認証済みのメール(auth.users)で探す
+  const existing = await findAuthUserByEmail(admin, email);
 
   let userId: string;
   if (existing) {
