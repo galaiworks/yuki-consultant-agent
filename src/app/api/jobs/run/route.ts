@@ -2,8 +2,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { processNextDeliverable } from "@/lib/agents/deliverable-loop";
 
 export const runtime = "nodejs";
-// Vercel Hobby の上限(300 秒)に合わせている。Pro にしたら 800 まで延ばせる
-export const maxDuration = 300;
+// Writer と Guardian を最大 4 往復するため長めに取る(Vercel Pro)
+export const maxDuration = 800;
 
 /**
  * 取りこぼした成果物ジョブを処理する。Vercel Cron から呼ぶ。
