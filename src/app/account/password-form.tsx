@@ -23,7 +23,10 @@ export function PasswordForm() {
       return;
     }
     setState("saving");
-    const { error } = await createSupabaseBrowserClient().auth.updateUser({ password });
+    const { error } = await createSupabaseBrowserClient().auth.updateUser({
+      password,
+      data: { must_change_password: false },
+    });
     if (error) {
       setState("error");
       setMessage("変更できませんでした。時間をおいて再度お試しください。");

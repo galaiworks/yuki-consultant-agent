@@ -101,13 +101,18 @@ export async function POST(req: Request) {
           },
         });
         if (result.citations.length) emit({ type: "citations", items: result.citations });
-        await supabase.from("messages").insert({
-          conversation_id: convId,
-          user_id: user.id,
-          role: "assistant",
-          text: result.text,
-          citations: result.citations,
-        });
+        const { data: saved } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: convId,
+            user_id: user.id,
+            role: "assistant",
+            text: result.text,
+            citations: result.citations,
+          })
+          .select("id")
+          .single();
+        if (saved) emit({ type: "saved", id: saved.id as string });
         await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
         emit({ type: "done" });
       } catch (err) {

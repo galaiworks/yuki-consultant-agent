@@ -27,6 +27,7 @@ export type ChatEvent =
   | { type: "citations"; items: Citation[] }
   | { type: "deliverable"; id: string }
   | { type: "conversation"; id: string }
+  | { type: "saved"; id: string }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -66,6 +67,9 @@ function stableSystem(): string {
 - research_market: 米国・日本の市場規模、競合、規制など最新の外部情報が必要なとき。
 - analyze_strategy: 状況整理が済み、打ち手を構造的に比べたいとき。
 - save_client_memory: 次回以降も覚えておくべき事実(業種、目標、制約、決めたこと)が出たとき。1 回 1 事実。
+
+# 相談者からの評価
+「これまでに覚えていること」の中の「回答への要望」「良かった点」は、相談者が過去の回答に付けた評価です。要望は必ず守り、良かった点は続けます。
 - request_deliverable: 相談者が「レポートにして」「計画書がほしい」と明確に頼んだときだけ。
 
 # 話し方

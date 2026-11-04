@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { decideAccess, generatePassCode, hashPassCode, normalizePassCode, type SubscriptionRow } from "@/lib/access";
+import { decideAccess, generatePassCode, hashPassCode, isAdminUser, normalizePassCode, type SubscriptionRow } from "@/lib/access";
+import { generateTempPassword } from "@/lib/admin/temp-password";
 
 const plans = [
   { id: "founding", name: "Founding", monthly_usage_limit_usd: 30 },
@@ -63,6 +64,25 @@ describe("チケットコード", () => {
       const code = generatePassCode();
       expect(code).toMatch(/^[A-Z2-9]{4}(-[A-Z2-9]{4}){3}$/);
       expect(code).not.toMatch(/[01OI]/);
+    }
+  });
+});
+
+describe("isAdminUser", () => {
+  it("DB の role か ADMIN_EMAILS のどちらかで管理者になる", () => {
+    expect(isAdminUser("admin", "a@x.com", [])).toBe(true);
+    expect(isAdminUser("client", "Boss@X.com", ["boss@x.com"])).toBe(true);
+    expect(isAdminUser("client", "a@x.com", ["boss@x.com"])).toBe(false);
+    expect(isAdminUser(null, null, ["boss@x.com"])).toBe(false);
+  });
+});
+
+describe("generateTempPassword", () => {
+  it("読み間違えやすい文字を含まない 14 文字", () => {
+    for (let i = 0; i < 50; i++) {
+      const p = generateTempPassword();
+      expect(p).toHaveLength(14);
+      expect(p).not.toMatch(/[01OIlo]/);
     }
   });
 });

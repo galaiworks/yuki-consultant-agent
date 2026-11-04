@@ -38,6 +38,13 @@ export const appConfig = {
   get siteUrl(): string {
     return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   },
+  /** 環境変数 ADMIN_EMAILS(カンマ区切り)に書いたメールアドレスは管理者として扱う */
+  get adminEmails(): string[] {
+    return (process.env.ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  },
   get stripeEnabled(): boolean {
     return Boolean(process.env.STRIPE_SECRET_KEY);
   },

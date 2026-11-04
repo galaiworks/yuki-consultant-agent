@@ -72,9 +72,15 @@ export function decideAccess(input: {
 }
 
 /** ログイン中ユーザーの利用可否を DB から判定する */
+/** DB の role か ADMIN_EMAILS のどちらかで管理者と判定する(テスト対象) */
+export function isAdminUser(role: string | null | undefined, email: string | null | undefined, adminEmails: string[]): boolean {
+  if (role === "admin") return true;
+  return Boolean(email && adminEmails.includes(email.toLowerCase()));
+}
+
 export async function getAccessForCurrentUser(supabase: SupabaseClient, userId: string): Promise<AccessDecision> {
   const [profile, subs, plans, usage] = await Promise.all([
-    supabase.from("profiles").select("role").eq("id", userId).single(),
+    supabase.from("profiles").select("role, email").eq("id", userId).single(),
     supabase.from("subscriptions").select("plan_id, source, status, current_period_end").eq("user_id", userId),
     supabase.from("plans").select("id, name, monthly_usage_limit_usd").eq("is_active", true),
     supabase.rpc("my_usage_this_month"),
@@ -84,7 +90,7 @@ export async function getAccessForCurrentUser(supabase: SupabaseClient, userId: 
   }
   return decideAccess({
     mode: appConfig.accessMode,
-    isAdmin: profile.data?.role === "admin",
+    isAdmin: isAdminUser(profile.data?.role, profile.data?.email, appConfig.adminEmails),
     subscriptions: (subs.data ?? []) as SubscriptionRow[],
     plans: (plans.data ?? []) as PlanRow[],
     defaultPlanId: appConfig.defaultPlanId,

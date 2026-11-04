@@ -4,11 +4,12 @@ import { useRef, useState } from "react";
 
 type Citation = { title: string; source: string; cited_text: string };
 export type InitialMessage = { id: string; role: "user" | "assistant"; text: string; citations: Citation[] };
-type Msg = InitialMessage & { pending?: boolean };
+/** dbId は保存後の ID(評価ボタンで使う)。表示用の id は変えない */
+type Msg = InitialMessage & { pending?: boolean; dbId?: string };
 
 /** チャット画面。サーバーから 1 行 1 JSON のイベントを受け取って表示する */
 export function ChatClient(props: { conversationId: string | null; initial: InitialMessage[]; disabled: boolean }) {
-  const [messages, setMessages] = useState<Msg[]>(props.initial);
+  const [messages, setMessages] = useState<Msg[]>(props.initial.map((m) => ({ ...m, dbId: m.id })));
   const [input, setInput] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -62,6 +63,8 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
             setStatus(`${ev.label}…`);
           } else if (ev.type === "citations") {
             patch((m) => ({ ...m, citations: ev.items }));
+          } else if (ev.type === "saved") {
+            patch((m) => ({ ...m, dbId: ev.id }));
           } else if (ev.type === "deliverable") {
             setStatus("成果物の作成を受け付けました。「成果物」ページで確認できます。");
           } else if (ev.type === "error") {
@@ -90,6 +93,7 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
         <div key={m.id} className={`msg ${m.role}`}>
           <span className="who">{m.role === "user" ? "あなた" : "YUKI Consultant Agent(AI)"}</span>
           <div className="body">{m.text || (m.pending ? "考えています…" : "")}</div>
+          {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
           {m.citations?.length > 0 && (
             <div className="cites">
               <span className="muted">出典</span>
@@ -126,5 +130,43 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
         </div>
       </form>
     </section>
+  );
+}
+
+/** 回答への 👍/👎。コメントは次回以降の回答に反映される */
+function Feedback({ messageId }: { messageId: string }) {
+  const [rating, setRating] = useState<1 | -1 | null>(null);
+  const [comment, setComment] = useState("");
+  const [sent, setSent] = useState(false);
+
+  async function submit(r: 1 | -1, text?: string) {
+    setRating(r);
+    await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId, rating: r, comment: text || undefined }),
+    }).catch(() => undefined);
+    if (text) setSent(true);
+  }
+
+  if (sent) return <p className="feedback muted">ありがとうございます。次回からの回答に反映します。</p>;
+  return (
+    <div className="feedback">
+      <span className="muted">この回答は役に立ちましたか?</span>
+      <button type="button" className="secondary" aria-pressed={rating === 1} onClick={() => submit(1)}>👍</button>
+      <button type="button" className="secondary" aria-pressed={rating === -1} onClick={() => submit(-1)}>👎</button>
+      {rating !== null && (
+        <>
+          <input
+            aria-label="ひとことコメント"
+            placeholder={rating === 1 ? "良かった点(任意)" : "どこを直してほしいか(任意)"}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            style={{ flex: "1 1 200px", padding: "4px 8px" }}
+          />
+          <button type="button" onClick={() => submit(rating, comment.trim())} disabled={!comment.trim()}>送る</button>
+        </>
+      )}
+    </div>
   );
 }
