@@ -1,6 +1,6 @@
 import { MODELS } from "@/lib/config";
 import { anthropic, FALLBACK_PARAMS, textOf } from "@/lib/agents/client";
-import { loadSkill } from "@/lib/skills";
+import { PERSONA_RULES, personaText, type Persona } from "@/lib/persona";
 import type { UsageSink } from "@/lib/agents/types";
 
 const KIND_GUIDE: Record<string, string> = {
@@ -10,15 +10,20 @@ const KIND_GUIDE: Record<string, string> = {
   other: "依頼内容に合った構成で。",
 };
 
-function system(): string {
+function system(persona: Persona): string {
   return `あなたは成果物ライターです。相談者に渡す文書を日本語の Markdown で書きます。
 - YUKI さんの知見として書くのは、資料に出典があるものだけです。出典は [タイトル](URL) で示します。
 - 「【テスト用サンプル】」の資料は YUKI さんの発言ではないので、そう明記します。
 - 数字には出典か前提を付けます。法務・税務・投資・ビザは専門家確認を促します。
 - 保証表現(必ず・絶対・100%)は使いません。
 
+${PERSONA_RULES}
+
+# YUKI さんの判断軸
+${personaText(persona, ["summary", "values", "reasoning", "methods", "boundaries"])}
+
 # 話し方
-${loadSkill("yuki-voice")}`;
+${personaText(persona, ["voice"])}`;
 }
 
 export async function writeDeliverable(input: {
@@ -27,6 +32,7 @@ export async function writeDeliverable(input: {
   context: string;
   knowledge: string;
   previous?: { content: string; feedback: string };
+  persona: Persona;
   usage: UsageSink;
 }): Promise<string> {
   const task = input.previous
@@ -42,7 +48,7 @@ ${input.previous.content}`
   const stream = anthropic().beta.messages.stream({
     model: MODELS.worker,
     max_tokens: 64000,
-    system: [{ type: "text", text: system(), cache_control: { type: "ephemeral", ttl: "1h" } }],
+    system: [{ type: "text", text: system(input.persona), cache_control: { type: "ephemeral", ttl: "1h" } }],
     output_config: { effort: "high" },
     messages: [
       {

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { MODELS } from "@/lib/config";
 import { anthropic, FALLBACK_PARAMS } from "@/lib/agents/client";
 import { loadSkill } from "@/lib/skills";
+import { PERSONA_RULES, personaText, type Persona } from "@/lib/persona";
 import { runResearcher } from "@/lib/agents/researcher";
 import { runAnalyst } from "@/lib/agents/analyst";
 import type { UsageSink } from "@/lib/agents/types";
@@ -51,8 +52,8 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 /** キャッシュに載せる固定部分。日時や相談者情報は入れない */
-function stableSystem(): string {
-  return `あなたは「YUKI Consultant Agent」です。米国の現役ビジネスコンサルタント YUKI さんの知見をもとに、有料クライアントの経営相談に答える AI アシスタントです。
+function stableSystem(persona: Persona): string {
+  return `あなたは「YUKI AI」です。アメリカの現役コンサルタント YUKI さん(YouTube「yukipedia」)の判断軸と知見をもとに、有料クライアントの相談(ビジネス・集客・キャリア・働き方・お金・人間関係・マインドセット)に答える AI アシスタントです。
 
 # 守ること
 - あなたは YUKI さん本人ではありません。本人として話したり、本人が言っていないことを本人の発言として書いたりしません。聞かれたら AI であると答えます。
@@ -72,8 +73,13 @@ function stableSystem(): string {
 「これまでに覚えていること」の中の「回答への要望」「良かった点」は、相談者が過去の回答に付けた評価です。要望は必ず守り、良かった点は続けます。
 - request_deliverable: 相談者が「レポートにして」「計画書がほしい」と明確に頼んだときだけ。
 
+${PERSONA_RULES}
+
+# YUKI さんの判断軸
+${personaText(persona, ["summary", "values", "reasoning", "methods", "boundaries"])}
+
 # 話し方
-${loadSkill("yuki-voice")}
+${personaText(persona, ["voice"])}
 
 # 相談の進め方
 ${loadSkill("consult-flow")}`;
@@ -95,7 +101,7 @@ function dynamicSystem(profile: ClientProfile | null, memories: string[]): strin
   return lines.join("\n");
 }
 
-function buildTools(deps: LeadDeps, profileSummary: string) {
+function buildTools(deps: LeadDeps, profileSummary: string, persona: Persona) {
   return [
     betaZodTool({
       name: "search_yuki_knowledge",
@@ -105,7 +111,7 @@ function buildTools(deps: LeadDeps, profileSummary: string) {
       run: async ({ query }) => {
         const hits = await deps.searchKnowledge(query);
         if (hits.length === 0) {
-          return "該当するナレッジはありませんでした(テスト期間中は YUKI さんの資料が未登録です)。一般的な助言として答え、その旨を伝えてください。";
+          return "該当する動画は見つかりませんでした。言い換えて検索し直すか、見つからなければ「動画内に根拠なし(一般論)」と明記して答えてください。";
         }
         return toSearchResultBlocks(hits);
       },
@@ -128,7 +134,7 @@ function buildTools(deps: LeadDeps, profileSummary: string) {
       }),
       eager_input_streaming: true,
       run: async ({ situation, question }) =>
-        runAnalyst(`${profileSummary}\n\n${situation}`, question, deps.usage),
+        runAnalyst(`${profileSummary}\n\n${situation}`, question, deps.usage, persona),
     }),
     betaZodTool({
       name: "save_client_memory",
@@ -180,6 +186,7 @@ export async function runLeadConsultant(input: {
   memories: string[];
   history: { role: "user" | "assistant"; text: string }[];
   userMessage: string;
+  persona: Persona;
   deps: LeadDeps;
 }): Promise<{ text: string; citations: Citation[] }> {
   const { deps } = input;
@@ -195,11 +202,11 @@ export async function runLeadConsultant(input: {
     max_tokens: 32000,
     max_iterations: 8,
     system: [
-      { type: "text" as const, text: stableSystem(), cache_control: { type: "ephemeral" as const, ttl: "1h" as const } },
+      { type: "text" as const, text: stableSystem(input.persona), cache_control: { type: "ephemeral" as const, ttl: "1h" as const } },
       { type: "text" as const, text: profileText },
     ],
     output_config: { effort: "medium" as const },
-    tools: buildTools(deps, profileText),
+    tools: buildTools(deps, profileText, input.persona),
     messages,
     stream: true as const,
     ...FALLBACK_PARAMS,

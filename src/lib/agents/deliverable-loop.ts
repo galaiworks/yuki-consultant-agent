@@ -5,6 +5,7 @@ import { searchKnowledge, sourceUrl } from "@/lib/knowledge/search";
 import { writeDeliverable } from "@/lib/agents/writer";
 import { decideNextStep, evaluateDeliverable, selfReflect, type Reflection } from "@/lib/agents/guardian";
 import type { UsageSink } from "@/lib/agents/types";
+import { loadPersona } from "@/lib/persona";
 
 type DeliverableRow = {
   id: string;
@@ -44,13 +45,14 @@ async function runQualityLoop(admin: SupabaseClient, job: DeliverableRow): Promi
     .single();
   const context = JSON.stringify(profile ?? {}, null, 2);
 
+  const persona = await loadPersona(admin);
   const hits = await searchKnowledge(admin, job.brief, 8);
   const knowledge = hits.map((h) => `- [${h.title}](${sourceUrl(h)}): ${h.content}`).join("\n");
 
-  let content = await writeDeliverable({ kind: job.kind, brief: job.brief, context, knowledge, usage });
+  let content = await writeDeliverable({ kind: job.kind, brief: job.brief, context, knowledge, persona, usage });
 
   for (let attempt = 0; ; attempt++) {
-    const ev = await evaluateDeliverable(content, `${job.brief}\n\n${context}`, usage);
+    const ev = await evaluateDeliverable(content, `${job.brief}\n\n${context}`, usage, persona);
     let reflection: Reflection | undefined;
     if (!ev.forceReject && ev.total >= 95) reflection = await selfReflect(content, ev, usage);
 
@@ -79,6 +81,7 @@ async function runQualityLoop(admin: SupabaseClient, job: DeliverableRow): Promi
       context,
       knowledge,
       previous: { content, feedback: step.feedback },
+      persona,
       usage,
     });
   }

@@ -2,7 +2,7 @@
 
 米国の現役ビジネスコンサル YUKI さんの知見をもとに、有料クライアントの経営相談に答える AI コンサルエージェントです。Next.js(Vercel)+ Supabase + Claude。
 
-> 現在はテスト期間です。YUKI さんの資料は未登録で、ナレッジは動作確認用のサンプルだけです。
+> 現在はテスト期間です。YUKI さんの素材は管理画面から取り込みます(素材は社外秘なので、このリポジトリには入れません)。
 
 ## できること
 - クライアント限定ログイン(管理者が登録した人だけ。パスワードまたはメールのリンク)
@@ -62,7 +62,8 @@ npm run client:invite -- --email you@example.com --admin
 # 特別チケットを発行(コードはこの時だけ表示)
 npm run pass:create -- --plan founding --days 30 --uses 1 --label "紹介枠"
 
-# YUKI さんの字幕・資料を登録(本人提供のデータのみ)
+# 動画の逐語録と判断軸は、管理画面の「YUKI さんのデータを取り込む」から登録する
+# 下は 1 本ずつ字幕ファイルを足すとき(本人提供のデータのみ)
 npm run knowledge:ingest -- --file data/video01.srt --title "動画タイトル" --url "https://www.youtube.com/watch?v=..."
 ```
 

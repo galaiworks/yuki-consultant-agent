@@ -5,7 +5,8 @@ Claude Code がこのリポジトリで作業するときの最上位ルール�
 ## プロダクト
 米国の現役ビジネスコンサル YUKI さん(YouTube `@yukipedia`)の知見をもとに、**有料クライアント限定**で経営相談に答える AI コンサルエージェント。
 
-- 現在は**テスト期間**。YUKI さんの字幕・資料はまだ受け取っていない(ナレッジは「テスト用サンプル」のみ)
+- 現在は**テスト期間**。YUKI さんの素材(公開動画 126 本の逐語録と、そこから作った判断軸 5 層)は受け取り済み。管理画面の「YUKI さんのデータを取り込む」で DB に入れる
+- **このリポジトリは公開**。YUKI さんの素材(逐語録・判断軸・引用・評価ケース)は社外秘なので、絶対にコミットしない。DB(`persona_layers`・`knowledge_*`、service role のみ)にだけ置く
 - API キーは当面 galaiworks が持つ。だから**利用料の記録と月間上限は必須**
 - 課金は後から開始。今は `ACCESS_MODE=open`(招待済みなら無料)。特別チケットでの利用も可能
 
@@ -30,11 +31,14 @@ Claude Code がこのリポジトリで作業するときの最上位ルール�
 
 モデル ID は `src/lib/config.ts` の `MODELS` だけで管理する。
 
+## YUKI さんの判断軸(本番)
+- 判断軸は `persona_layers` 表の 6 つ(summary / values / reasoning / methods / boundaries / voice)。読み込みは `src/lib/persona.ts`
+- 使い方のルール(優先順位、確定/仮説、条件→結論→理由)は `PERSONA_RULES`(公開してよい運用ルールだけを書く)
+- 判断軸を直すときは、元のパイプライン(yukipedia_youtube)で直して取り込みファイルを作り直し、管理画面から入れ直す
+
 ## スキル(開発と本番で共用)
-`.claude/skills/*/SKILL.md` は本番エージェントが実行時に読み込む。話し方・フレームワークの変更はここだけで行う。
-- `yuki-voice`: 話し方(**仮版**。本人データで置き換える)
-- `yuki-frameworks`: 思考の型(**仮版**。一般的な型を仮置き)
 - `consult-flow`: 相談の進め方
+- `yuki-voice` / `yuki-frameworks`: **仮版**。`persona_layers` が空のときだけ使う予備
 
 ## 運用と改善
 - 運用は管理画面(`/admin`)で行う。管理画面のデータは `requireAdmin()` を通した service role でだけ読み書きする
