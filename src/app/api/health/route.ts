@@ -22,7 +22,8 @@ export async function GET() {
   try {
     const admin = createSupabaseAdminClient();
     const { count, error } = await admin.from("plans").select("id", { count: "exact", head: true });
-    const feedback = await admin.from("message_feedback").select("id", { count: "exact", head: true });
+    // head リクエストはテーブルが無くてもエラーにならないので、本文ありで確かめる
+    const feedback = await admin.from("message_feedback").select("id").limit(1);
     database = error ? `error: ${error.code ?? "unknown"}` : `ok (plans=${count}, feedback_table=${feedback.error ? "missing" : "ok"})`;
   } catch {
     database = "error: not configured";
