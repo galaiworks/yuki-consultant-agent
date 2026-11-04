@@ -9,7 +9,8 @@ import { runLeadConsultant, type ChatEvent } from "@/lib/agents/lead";
 import { processNextDeliverable } from "@/lib/agents/deliverable-loop";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// 応答後に成果物ジョブも同じ関数で処理するため長めに取る(Vercel Pro)
+export const maxDuration = 800;
 
 const Body = z.object({
   conversationId: z.string().uuid().nullable(),

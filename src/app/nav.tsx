@@ -8,6 +8,7 @@ export function Nav() {
       <Link href="/chat">相談</Link>
       <Link href="/deliverables">成果物</Link>
       <Link href="/billing">プラン</Link>
+      <Link href="/account">アカウント</Link>
       <form action="/auth/signout" method="post">
         <button className="secondary" type="submit">ログアウト</button>
       </form>
