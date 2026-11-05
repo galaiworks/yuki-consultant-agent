@@ -14,6 +14,18 @@ export const MODELS = {
 
 export type ModelId = (typeof MODELS)[keyof typeof MODELS];
 
+/**
+ * YUKI の声(ElevenLabs)。2026-11-05 に聞き比べて決めた設定(サンプル H)。
+ * 声の ID は ELEVENLABS_VOICE_ID、キーは ELEVENLABS_API_KEY(どちらもサーバーだけ)。
+ * 文は漢字まじりのまま渡す(ひらがなだけにするとアクセントが崩れる)。読み間違える語だけ読みを直す。
+ */
+export const VOICE = {
+  model: "eleven_v4",
+  languageCode: "ja",
+  settings: { stability: 0.5, similarity_boost: 0.9, style: 0, use_speaker_boost: true },
+  outputFormat: "mp3_44100_128",
+} as const;
+
 /** open = 招待済みなら無料で利用 / paid = サブスクかチケットが必要 */
 export type AccessMode = "open" | "paid";
 
