@@ -88,7 +88,7 @@ export default function LoginPage() {
           {mode === "password" ? "メールのリンクでログインする" : "パスワードでログインする"}
         </button>
       </form>
-      <p className="notice">このサービスの回答は AI が作成しています。YUKI さん本人の回答ではありません。</p>
+      <p className="notice">このサービスの YUKI は、本人の動画と考え方をもとに作られた AI です(本人公認)。</p>
     </main>
   );
 }

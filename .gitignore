@@ -10,3 +10,7 @@ coverage/
 next-env.d.ts
 data/
 .DS_Store
+
+# YUKI さんの素材(社外秘)は入れない
+*.jsonl
+yukipedia*/

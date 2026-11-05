@@ -7,6 +7,7 @@ import { recordUsage } from "@/lib/usage";
 import { searchKnowledge } from "@/lib/knowledge/search";
 import { runLeadConsultant, type ChatEvent } from "@/lib/agents/lead";
 import { processNextDeliverable } from "@/lib/agents/deliverable-loop";
+import { loadPersona } from "@/lib/persona";
 
 export const runtime = "nodejs";
 // 応答後に成果物ジョブも同じ関数で処理するため長めに取る(Vercel Pro)
@@ -65,6 +66,8 @@ export async function POST(req: Request) {
   if (insertErr) return Response.json({ error: "メッセージを保存できませんでした" }, { status: 500 });
 
   const admin = createSupabaseAdminClient();
+  // YUKI さんの素材(社外秘)はクライアントから読めない。検索と判断軸はサーバー側の service role で読む
+  const persona = await loadPersona(admin);
   const usageCtx = { userId: user.id, conversationId };
   const convId = conversationId;
   let queuedDeliverable = false;
@@ -80,8 +83,9 @@ export async function POST(req: Request) {
           memories: (memoriesRes.data ?? []).map((m) => m.fact as string).reverse(),
           history: ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse(),
           userMessage: message,
+          persona,
           deps: {
-            searchKnowledge: (q) => searchKnowledge(supabase, q),
+            searchKnowledge: (q) => searchKnowledge(admin, q),
             saveMemory: async (fact) => {
               const { error } = await supabase.from("client_memories").insert({ user_id: user.id, fact });
               if (error) throw new Error("メモを保存できませんでした");

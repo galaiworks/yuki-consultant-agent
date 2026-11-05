@@ -3,6 +3,7 @@ import { appConfig } from "@/lib/config";
 import { Nav } from "@/app/nav";
 import { CreateClientForm, CreatePassForm, ResetPasswordButton } from "@/app/admin/forms";
 import { approveDeliverableAction } from "@/app/admin/actions";
+import { KnowledgeImport } from "@/app/admin/knowledge-import";
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "受付済み",
@@ -39,6 +40,14 @@ export default async function AdminPage() {
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
+
+  const [kSources, kChunks, kTest, personaRows] = await Promise.all([
+    admin.from("knowledge_sources").select("id", { count: "exact", head: true }).eq("is_test", false),
+    admin.from("knowledge_chunks").select("id", { count: "exact", head: true }),
+    admin.from("knowledge_sources").select("id", { count: "exact", head: true }).eq("is_test", true),
+    // 判断軸の表はマイグレーション適用後に使える
+    admin.from("persona_layers").select("key, version, updated_at"),
+  ]);
 
   const [profiles, subs, usageRows, plans, passes, deliverables, pending, feedback] = await Promise.all([
     admin.from("profiles").select("id, email, display_name, company_name, role, created_at").order("created_at", { ascending: false }),
@@ -92,6 +101,15 @@ export default async function AdminPage() {
         <div className="stat">
           <span className="muted">回答の評価(直近)</span>
           <strong>{feedbackRows.length ? `👍 ${good} / 👎 ${feedbackRows.length - good}` : "-"}</strong>
+        </div>
+        <div className="stat">
+          <span className="muted">YUKI さんのデータ</span>
+          <strong>
+            {personaRows.error ? "未設定" : `判断軸 ${personaRows.data?.length ?? 0}/7 層`} / 動画 {kSources.count ?? 0} 本
+          </strong>
+          <span className="muted" style={{ fontSize: 12 }}>
+            チャンク {kChunks.count ?? 0} 件{(kTest.count ?? 0) > 0 ? ` / テスト用サンプル ${kTest.count} 件が残っています` : ""}
+          </span>
         </div>
         <div className="stat"><span className="muted">利用モード</span><strong>{appConfig.accessMode === "open" ? "無料(テスト)" : "有料"}</strong></div>
       </section>
@@ -161,6 +179,13 @@ export default async function AdminPage() {
           </table>
         </div>
       </section>
+
+      {personaRows.error && (
+        <p className="error">
+          判断軸の表がまだありません。Supabase で supabase/migrations/20261104000200_private_knowledge_and_persona.sql を実行してください。
+        </p>
+      )}
+      <KnowledgeImport />
 
       <div className="grid2">
         <CreateClientForm siteUrl={appConfig.siteUrl} />

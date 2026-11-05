@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { MODELS } from "@/lib/config";
 import { anthropic } from "@/lib/agents/client";
-import { loadSkill } from "@/lib/skills";
+import { personaText, type Persona } from "@/lib/persona";
 import type { UsageSink } from "@/lib/agents/types";
 
 /** 採点軸と配点(.claude/rules/quality-95.md と一致させる) */
@@ -79,7 +79,7 @@ export function buildFeedback(ev: Evaluation): string {
 const RUBRIC = `あなたは Guardian(品質保証)です。成果物を厳しく採点します。「ぱっと見で問題ない」では満点にしません。
 
 採点軸:
-- yuki_fidelity (25): 下の話し方ガイドに合っているか。YUKI さん本人の発言でないものを本人の発言として書いていないか
+- yuki_fidelity (25): 下の YUKI さんの判断軸(条件 → 結論 → 理由)とずれていないか。条件付きの助言を条件抜きで勧めていないか。口調だけ似せて中身が一般論になっていないか。トンマナ(語尾・つなぎ・寄り添い)に合い、堅いビジネス敬語や動画の定型あいさつがないか。YUKI さん本人の発言・体験でないものを本人のものとして書いていないか
 - evidence (25): 主張・数字に出典があるか。出典のない数字は 1 つにつき減点
 - actionability (20): 相談者が次に何をするか、期限と担当まで具体的か
 - client_fit (15): 相談者の業種・規模・状況に合っているか
@@ -92,12 +92,13 @@ export async function evaluateDeliverable(
   content: string,
   context: string,
   usage: UsageSink,
+  persona: Persona,
 ): Promise<Evaluation> {
   const res = await anthropic().messages.parse({
     model: MODELS.guardian,
     max_tokens: 16000,
     system: [
-      { type: "text", text: `${RUBRIC}\n\n# 話し方ガイド\n${loadSkill("yuki-voice")}`, cache_control: { type: "ephemeral", ttl: "1h" } },
+      { type: "text", text: `${RUBRIC}\n\n# YUKI さんの判断軸\n${personaText(persona, ["summary", "boundaries"])}\n\n# 話し方ガイド\n${personaText(persona, ["voice"])}`, cache_control: { type: "ephemeral", ttl: "1h" } },
     ],
     output_config: { effort: "high", format: zodOutputFormat(EvaluationSchema) },
     messages: [{ role: "user", content: `# 依頼内容と相談者\n${context}\n\n# 採点する成果物\n${content}` }],
