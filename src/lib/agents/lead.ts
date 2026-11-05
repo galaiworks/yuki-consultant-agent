@@ -76,7 +76,7 @@ function stableSystem(persona: Persona): string {
 ${PERSONA_RULES}
 
 # YUKI さんの判断軸
-${personaText(persona, ["summary", "values", "reasoning", "methods", "boundaries"])}
+${personaText(persona, ["summary", "values", "reasoning", "methods", "boundaries", "profile"])}
 
 # 話し方
 ${personaText(persona, ["voice"])}

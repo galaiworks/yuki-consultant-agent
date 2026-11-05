@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** 判断軸の層の名前(persona_layers.key と一致させる) */
-export const PERSONA_KEYS = ["summary", "values", "reasoning", "methods", "boundaries", "voice"] as const;
+export const PERSONA_KEYS = ["summary", "values", "reasoning", "methods", "boundaries", "voice", "profile"] as const;
 
 /**
  * 取り込みファイル(1 行 1 JSON)の形式。

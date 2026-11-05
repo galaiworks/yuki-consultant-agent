@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const BodySchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("persona"), items: z.array(PersonaLineSchema).min(1).max(6) }),
+  z.object({ action: z.literal("persona"), items: z.array(PersonaLineSchema).min(1).max(7) }),
   z.object({ action: z.literal("video"), item: VideoLineSchema }),
   z.object({ action: z.literal("clear_test") }),
 ]);

@@ -32,7 +32,7 @@ Claude Code がこのリポジトリで作業するときの最上位ルール�
 モデル ID は `src/lib/config.ts` の `MODELS` だけで管理する。
 
 ## YUKI さんの判断軸(本番)
-- 判断軸は `persona_layers` 表の 6 つ(summary / values / reasoning / methods / boundaries / voice)。読み込みは `src/lib/persona.ts`
+- 判断軸は `persona_layers` 表の 7 つ(summary / values / reasoning / methods / boundaries / voice / profile)。profile は経歴・転機・人間関係・性格・習慣の人格プロファイル。読み込みは `src/lib/persona.ts`
 - 使い方のルール(優先順位、確定/仮説、条件→結論→理由)は `PERSONA_RULES`(公開してよい運用ルールだけを書く)
 - 判断軸を直すときは、元のパイプライン(yukipedia_youtube)で直して取り込みファイルを作り直し、管理画面から入れ直す
 

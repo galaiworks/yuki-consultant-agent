@@ -105,7 +105,7 @@ export default async function AdminPage() {
         <div className="stat">
           <span className="muted">YUKI さんのデータ</span>
           <strong>
-            {personaRows.error ? "未設定" : `判断軸 ${personaRows.data?.length ?? 0}/6 層`} / 動画 {kSources.count ?? 0} 本
+            {personaRows.error ? "未設定" : `判断軸 ${personaRows.data?.length ?? 0}/7 層`} / 動画 {kSources.count ?? 0} 本
           </strong>
           <span className="muted" style={{ fontSize: 12 }}>
             チャンク {kChunks.count ?? 0} 件{(kTest.count ?? 0) > 0 ? ` / テスト用サンプル ${kTest.count} 件が残っています` : ""}
