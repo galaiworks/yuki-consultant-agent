@@ -43,7 +43,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       </div>
       {!access.allowed && <p className="error">今月の利用上限に達しました。来月またはプラン変更後にご利用ください。</p>}
       <ChatClient key={c ?? "new"} conversationId={c ?? null} initial={initial} disabled={!access.allowed} />
-      <p className="notice">回答は AI が作成しています。YUKI さん本人の回答ではありません。法務・税務・投資・ビザの判断は専門家にご確認ください。</p>
+      <p className="notice">この YUKI は、YUKI 本人の動画と考え方をもとに作られた AI です(本人公認)。本人がその場で答えているわけではありません。法務・税務・投資・医療の判断は専門家にご確認ください。</p>
     </main>
   );
 }

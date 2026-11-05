@@ -91,7 +91,7 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
       )}
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.role}`}>
-          <span className="who">{m.role === "user" ? "あなた" : "YUKI Consultant Agent(AI)"}</span>
+          <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
           <div className="body">{m.text || (m.pending ? "考えています…" : "")}</div>
           {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
           {m.citations?.length > 0 && (
