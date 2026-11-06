@@ -105,7 +105,8 @@ export async function POST(req: Request) {
           },
         });
         if (result.citations.length) emit({ type: "citations", items: result.citations });
-        const { data: saved } = await supabase
+        // YUKI の返事はサーバーだけが書ける(RLS で利用者は role = 'user' しか書けない)
+        const { data: saved } = await admin
           .from("messages")
           .insert({
             conversation_id: convId,

@@ -8,7 +8,12 @@ export type InitialMessage = { id: string; role: "user" | "assistant"; text: str
 type Msg = InitialMessage & { pending?: boolean; dbId?: string };
 
 /** チャット画面。サーバーから 1 行 1 JSON のイベントを受け取って表示する */
-export function ChatClient(props: { conversationId: string | null; initial: InitialMessage[]; disabled: boolean }) {
+export function ChatClient(props: {
+  conversationId: string | null;
+  initial: InitialMessage[];
+  disabled: boolean;
+  voiceEnabled: boolean;
+}) {
   const [messages, setMessages] = useState<Msg[]>(props.initial.map((m) => ({ ...m, dbId: m.id })));
   const [input, setInput] = useState("");
   const [status, setStatus] = useState("");
@@ -86,13 +91,14 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
       {messages.length === 0 && (
         <div className="card">
           <h2>どんなことでご相談しますか</h2>
-          <p className="muted">例:「日本で売れている自社商品を米国で試したい。最初の 90 日で何をすべき?」</p>
+          <p className="muted">例:「インスタを毎日投稿しているのに、半年たってもフォロワーが増えません。続けるべきですか?」</p>
         </div>
       )}
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.role}`}>
           <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
           <div className="body">{m.text || (m.pending ? "考えています…" : "")}</div>
+          {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
           {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
           {m.citations?.length > 0 && (
             <div className="cites">
@@ -130,6 +136,51 @@ export function ChatClient(props: { conversationId: string | null; initial: Init
         </div>
       </form>
     </section>
+  );
+}
+
+/** YUKI の声で回答を聞く。一度作った音声はページを開いている間は使い回す */
+function Listen({ messageId }: { messageId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const url = useRef<string | null>(null);
+
+  async function toggle() {
+    if (state === "playing") {
+      audio.current?.pause();
+      setState("idle");
+      return;
+    }
+    if (!audio.current) return;
+    try {
+      if (!url.current) {
+        setState("loading");
+        // iPhone では、押した直後に再生を始めないと音が出ないことがあるので、先に鳴らす準備をしておく
+        void audio.current.play().catch(() => {});
+        const res = await fetch("/api/voice/speak", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ messageId }),
+        });
+        if (!res.ok) throw new Error();
+        url.current = URL.createObjectURL(await res.blob());
+        audio.current.src = url.current;
+      }
+      await audio.current.play();
+      setState("playing");
+    } catch {
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="row" style={{ gap: 8 }}>
+      <button type="button" className="secondary" onClick={toggle} disabled={state === "loading"}>
+        {state === "playing" ? "■ 止める" : state === "loading" ? "声を作っています…" : "▶ YUKI の声で聞く"}
+      </button>
+      {state === "error" && <span className="error" style={{ fontSize: 13 }}>読み上げできませんでした</span>}
+      <audio ref={audio} onEnded={() => setState("idle")} preload="none" />
+    </div>
   );
 }
 
