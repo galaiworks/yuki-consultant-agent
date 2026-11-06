@@ -63,9 +63,6 @@ export async function POST(req: Request) {
     vectors.push(...(batch ?? rows.slice(i, i + 64).map(() => null)));
   }
 
-  const del = await admin.from("knowledge_sources").delete().eq("kind", "youtube").eq("url", v.url);
-  if (del.error) return Response.json({ error: `前のデータを消せませんでした: ${del.error.message}` }, { status: 500 });
-
   const { data: src, error } = await admin
     .from("knowledge_sources")
     .insert({ kind: "youtube", title: v.title, url: v.url, published_at: v.published_at ?? null, is_test: false })
@@ -86,5 +83,9 @@ export async function POST(req: Request) {
       return Response.json({ error: `本文を登録できませんでした: ${cErr.message}` }, { status: 500 });
     }
   }
+
+  // 新しい分が全部入ってから、同じ動画の古い分を消す(途中で失敗しても元のデータは残る)
+  const del = await admin.from("knowledge_sources").delete().eq("kind", "youtube").eq("url", v.url).neq("id", src.id);
+  if (del.error) console.error("old knowledge cleanup failed", del.error.message);
   return Response.json({ ok: true, chunks: rows.length, embedded: vectors.some(Boolean) });
 }

@@ -28,6 +28,13 @@ describe("parseBundle", () => {
   });
 });
 
+describe("published_at", () => {
+  it("ありえない日付は取り込む前に弾く", () => {
+    expect(parseBundle(JSON.stringify({ ...video, published_at: "2024-13-01" })).errors).toHaveLength(1);
+    expect(parseBundle(JSON.stringify({ ...video, published_at: "2024-02-29" })).errors).toHaveLength(0);
+  });
+});
+
 describe("buildChunkRows", () => {
   it("逐語録は 0 から、引用は 10000 から番号を振り、要約と原文を分けて書く", () => {
     const { videos } = parseBundle(JSON.stringify(video));

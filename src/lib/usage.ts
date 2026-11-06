@@ -9,6 +9,23 @@ const PRICES: Record<string, { input: number; output: number; cacheRead: number;
 /** Web 検索 1 回あたり(USD) */
 const WEB_SEARCH_USD = 0.01;
 
+/**
+ * ElevenLabs の音声(目安の単価)。プランの超過料金をもとにした概算で、請求額そのものではない。
+ * 料金改定時はここだけ直す
+ */
+export const SPEECH_PRICES = {
+  /** 文字起こし: 1 秒あたり(USD)。1 時間 0.40 ドル */
+  sttPerSecond: 0.4 / 3600,
+  /** 読み上げ: 1 文字あたり(USD)。1,000 文字 0.30 ドル */
+  ttsPerChar: 0.3 / 1000,
+} as const;
+
+/** 音声の概算費用(テスト対象) */
+export function computeSpeechCost(input: { sttSeconds?: number; ttsChars?: number }): number {
+  const cost = (input.sttSeconds ?? 0) * SPEECH_PRICES.sttPerSecond + (input.ttsChars ?? 0) * SPEECH_PRICES.ttsPerChar;
+  return Math.round(cost * 1_000_000) / 1_000_000;
+}
+
 export type UsageLike = {
   input_tokens?: number | null;
   output_tokens?: number | null;
@@ -73,4 +90,23 @@ export async function recordUsage(
   });
   // 記録失敗で相談そのものは止めないが、必ずログに残す
   if (error) console.error("usage_logs への記録に失敗", error.message);
+}
+
+/** 音声(ElevenLabs)の利用料を、Claude と同じ表・同じ月の上限に入れる */
+export async function recordSpeechUsage(
+  admin: SupabaseClient,
+  ctx: UsageContext,
+  agent: "voice_stt" | "voice_tts",
+  model: string,
+  costUsd: number,
+): Promise<void> {
+  const { error } = await admin.from("usage_logs").insert({
+    user_id: ctx.userId,
+    conversation_id: ctx.conversationId ?? null,
+    deliverable_id: null,
+    agent,
+    model,
+    cost_usd: costUsd,
+  });
+  if (error) console.error("usage_logs への記録に失敗(音声)", error.message);
 }

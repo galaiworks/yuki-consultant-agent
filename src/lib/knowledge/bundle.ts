@@ -20,10 +20,7 @@ export const VideoLineSchema = z.object({
   video_id: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
   title: z.string().min(1).max(300),
   url: z.string().url(),
-  published_at: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullish(),
+  published_at: z.iso.date().nullish(),
   chunks: z.array(z.string().min(1).max(5000)).min(1).max(400),
   evidence: z
     .array(
