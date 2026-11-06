@@ -4,6 +4,7 @@ import { Nav } from "@/app/nav";
 import { CreateClientForm, CreatePassForm, ResetPasswordButton } from "@/app/admin/forms";
 import { approveDeliverableAction } from "@/app/admin/actions";
 import { KnowledgeImport } from "@/app/admin/knowledge-import";
+import { EvalRunner } from "@/app/admin/eval-runner";
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "受付済み",
@@ -186,6 +187,7 @@ export default async function AdminPage() {
         </p>
       )}
       <KnowledgeImport />
+      <EvalRunner />
 
       <div className="grid2">
         <CreateClientForm siteUrl={appConfig.siteUrl} />
