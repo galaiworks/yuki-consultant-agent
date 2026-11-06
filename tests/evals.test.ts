@@ -10,6 +10,13 @@ describe("parseCases", () => {
   });
 });
 
+describe("regex の検証", () => {
+  it("壊れた正規表現のケースは読み込み時に弾く", () => {
+    const bad = JSON.stringify({ id: "x", prompt: "相談", graders: [{ name: "r", type: "regex", pattern: "[" }] });
+    expect(parseCases(bad).errors).toHaveLength(1);
+  });
+});
+
 describe("gradeDeterministic", () => {
   const run = { text: "必ず儲かります", citations: 0, searched: true };
   it("使ってはいけない表現が含まれていれば不合格", () => {

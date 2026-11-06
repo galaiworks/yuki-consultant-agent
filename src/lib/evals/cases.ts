@@ -9,7 +9,15 @@ export const GraderSchema = z.discriminatedUnion("type", [
   z.object({
     name: z.string(),
     type: z.literal("regex"),
-    pattern: z.string().min(1),
+    // 壊れた正規表現は、費用のかかる実行の前に弾く
+    pattern: z.string().min(1).refine((p) => {
+      try {
+        new RegExp(p);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "正規表現として読めません"),
     match: z.enum(["contains", "not_contains"]).default("contains"),
   }),
   z.object({ name: z.string(), type: z.literal("cites") }),
