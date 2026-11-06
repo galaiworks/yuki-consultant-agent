@@ -21,6 +21,7 @@ export type ModelId = (typeof MODELS)[keyof typeof MODELS];
  */
 export const VOICE = {
   model: "eleven_v4",
+  sttModel: "scribe_v2",
   languageCode: "ja",
   settings: { stability: 0.5, similarity_boost: 0.9, style: 0, use_speaker_boost: true },
   outputFormat: "mp3_44100_128",
@@ -59,6 +60,16 @@ export const appConfig = {
   },
   get stripeEnabled(): boolean {
     return Boolean(process.env.STRIPE_SECRET_KEY);
+  },
+  /** 音声会話(ElevenLabs の文字起こしと読み上げ)。キーはサーバーだけで使う */
+  get voiceEnabled(): boolean {
+    return Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID);
+  },
+  get elevenLabsVoiceId(): string {
+    return requireEnv("ELEVENLABS_VOICE_ID");
+  },
+  get elevenLabsApiKey(): string {
+    return requireEnv("ELEVENLABS_API_KEY");
   },
 };
 

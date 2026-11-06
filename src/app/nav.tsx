@@ -10,6 +10,7 @@ export async function Nav() {
       <nav className="nav">
         <Link className="brand" href="/chat">YUKI Consultant Agent</Link>
         <Link href="/chat">相談</Link>
+        <Link href="/voice">声で話す</Link>
         <Link href="/deliverables">成果物</Link>
         <Link href="/billing">プラン</Link>
         <Link href="/account">アカウント</Link>
