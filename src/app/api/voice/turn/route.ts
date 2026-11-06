@@ -108,7 +108,8 @@ export async function POST(req: Request) {
 
   // 1 回の insert だと同じ時刻になり順番が崩れるので、相談者 → YUKI の順に別々に保存する
   await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", text: userText });
-  await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "assistant", text: replyText });
+  // YUKI の返事はサーバーだけが書ける(RLS で利用者は role = 'user' しか書けない)
+  await admin.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "assistant", text: replyText });
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 
   // 3) 返事 → YUKI の声(失敗しても文字の返事は返す)
