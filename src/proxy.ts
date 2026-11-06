@@ -26,7 +26,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/api/billing/webhook") || path.startsWith("/api/jobs") || path.startsWith("/api/health") || path.startsWith("/api/admin/bootstrap");
+  const isPublic = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/api/billing/webhook") || path.startsWith("/api/jobs") || path.startsWith("/api/health") || path.startsWith("/api/admin/bootstrap") || path === "/terms" || path === "/privacy" || path === "/legal";
   if (!user && !isPublic) {
     if (path.startsWith("/api/")) {
       return NextResponse.json({ error: "ログインが必要です" }, { status: 401 });
