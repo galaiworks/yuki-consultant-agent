@@ -1,8 +1,8 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getAccessForCurrentUser } from "@/lib/access";
-import { appConfig } from "@/lib/config";
-import { recordUsage } from "@/lib/usage";
+import { appConfig, VOICE } from "@/lib/config";
+import { computeSpeechCost, recordSpeechUsage, recordUsage } from "@/lib/usage";
 import { searchKnowledge } from "@/lib/knowledge/search";
 import { loadPersona } from "@/lib/persona";
 import { runVoiceReply } from "@/lib/agents/voice";
@@ -44,6 +44,10 @@ export async function POST(req: Request) {
 
   let conversationId = String(form?.get("conversationId") ?? "");
   if (conversationId && !UUID.test(conversationId)) conversationId = "";
+  // 録音の長さ(秒)。費用の記録に使う。届かなければ大きさから見積もる
+  const reported = Number(form?.get("durationSec"));
+  const sttSeconds = Math.min(600, Math.max(1, Number.isFinite(reported) && reported > 0 ? reported : audio.size / 4000));
+  const admin = createSupabaseAdminClient();
 
   // 1) 声 → 文字
   let userText: string;
@@ -51,10 +55,14 @@ export async function POST(req: Request) {
     const ext = audio.type.includes("mp4") ? "m4a" : audio.type.includes("ogg") ? "ogg" : "webm";
     userText = await transcribe(audio, `voice.${ext}`);
   } catch (err) {
+    await recordSpeechUsage(admin, { userId: user.id }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds }));
     console.error(err);
     return Response.json({ error: "声を文字にできませんでした。もう一度お試しください" }, { status: 502 });
   }
-  if (!userText) return Response.json({ error: "うまく聞き取れませんでした。もう一度お話しください" }, { status: 422 });
+  if (!userText) {
+    await recordSpeechUsage(admin, { userId: user.id }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds }));
+    return Response.json({ error: "うまく聞き取れませんでした。もう一度お話しください" }, { status: 422 });
+  }
 
   if (!conversationId) {
     const { data, error } = await supabase
@@ -65,8 +73,8 @@ export async function POST(req: Request) {
     if (error || !data) return Response.json({ error: "会話を始められませんでした" }, { status: 500 });
     conversationId = data.id as string;
   }
-
-  const admin = createSupabaseAdminClient();
+  // 文字起こしの費用は、このあと返事に失敗しても記録する
+  await recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds }));
   const [persona, profile, memories, historyRes, hits] = await Promise.all([
     loadPersona(admin),
     supabase.from("profiles").select("display_name, company_name, industry").eq("id", user.id).single(),
@@ -98,16 +106,17 @@ export async function POST(req: Request) {
     return Response.json({ error: "返事を作れませんでした。少し時間をおいてお試しください" }, { status: 502 });
   }
 
-  await supabase.from("messages").insert([
-    { conversation_id: conversationId, user_id: user.id, role: "user", text: userText },
-    { conversation_id: conversationId, user_id: user.id, role: "assistant", text: replyText },
-  ]);
+  // 1 回の insert だと同じ時刻になり順番が崩れるので、相談者 → YUKI の順に別々に保存する
+  await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", text: userText });
+  await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "assistant", text: replyText });
   await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 
   // 3) 返事 → YUKI の声(失敗しても文字の返事は返す)
   let audioBase64: string | null = null;
   try {
-    audioBase64 = Buffer.from(await synthesize(toSpeakable(replyText))).toString("base64");
+    const speakable = toSpeakable(replyText);
+    audioBase64 = Buffer.from(await synthesize(speakable)).toString("base64");
+    await recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_tts", VOICE.model, computeSpeechCost({ ttsChars: speakable.length }));
   } catch (err) {
     console.error(err);
   }

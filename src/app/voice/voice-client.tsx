@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Line = { who: "you" | "yuki"; text: string };
+
+/** 0.1 秒の無音。iPhone で音を鳴らせる状態にするために、ボタンを押したときに一度だけ再生する */
+const SILENT_WAV = "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
 type Phase = "idle" | "recording" | "thinking" | "speaking";
 
 /** ブラウザが録音できる形式を選ぶ(iPhone の Safari は mp4) */
@@ -28,14 +31,16 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const conversationId = useRef<string | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const startedAt = useRef(0);
   const player = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
 
-  const send = useCallback(async (blob: Blob) => {
+  const send = useCallback(async (blob: Blob, durationSec: number) => {
     setPhase("thinking");
     const form = new FormData();
     form.append("audio", blob, "voice");
+    form.append("durationSec", String(Math.round(durationSec)));
     if (conversationId.current) form.append("conversationId", conversationId.current);
     try {
       const res = await fetch("/api/voice/turn", { method: "POST", body: form });
@@ -70,12 +75,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
     }
     if (phase !== "idle") return;
     try {
-      // iPhone では、ボタンを押した瞬間に一度音を鳴らす準備をしておかないと、あとで再生できない
+      // iPhone では、ボタンを押した瞬間に一度音を鳴らしておかないと、あとで再生できない。
+      // 終わるのを待つと録音の開始が止まることがあるので、待たずに先へ進む
       if (player.current) {
-        player.current.muted = true;
-        await player.current.play().catch(() => {});
-        player.current.pause();
-        player.current.muted = false;
+        player.current.src = SILENT_WAV;
+        void player.current.play().catch(() => {});
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = pickMime();
@@ -85,10 +89,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       rec.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks.current, { type: rec.mimeType || mime || "audio/webm" });
-        void send(blob);
+        void send(blob, (Date.now() - startedAt.current) / 1000);
       };
       recorder.current = rec;
       rec.start();
+      startedAt.current = Date.now();
       setPhase("recording");
     } catch {
       setError("マイクを使えませんでした。ブラウザでマイクの使用を許可してください");
@@ -119,7 +124,12 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
           ))}
         </div>
       )}
-      <audio ref={player} onEnded={() => setPhase("idle")} onError={() => setPhase("idle")} preload="none" />
+      <audio
+        ref={player}
+        onEnded={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
+        onError={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
+        preload="none"
+      />
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>
         1 回に話すのは 1 分くらいまでがおすすめです。会話は文字の相談と同じく履歴に残ります。
       </p>
