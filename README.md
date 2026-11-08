@@ -81,3 +81,15 @@ npm test
 npm run build
 ```
 Claude Code 向けのルールは `CLAUDE.md`、構成は `docs/architecture.md`。
+
+## 公開前の設定(ターミナルから)
+
+```bash
+git clone https://github.com/galaiworks/yuki-consultant-agent.git && cd yuki-consultant-agent && npm ci
+./scripts/setup.sh check                     # いまの状態
+./scripts/setup.sh sql                       # Supabase に未実行の SQL を入れる(supabase/pending.sql)
+./scripts/setup.sh vercel                    # ElevenLabs・Voyage のキーを入れ、BOOTSTRAP_TOKEN を消して本番を作り直す
+./scripts/setup.sh import ~/Downloads/yuki-knowledge-bundle.jsonl   # YUKI さんのデータを入れる
+```
+
+キーは表示されない入力欄で聞き、ファイルにも履歴にも残しません。YUKI さんの取り込みファイルは社外秘なので、このリポジトリには入れません。
