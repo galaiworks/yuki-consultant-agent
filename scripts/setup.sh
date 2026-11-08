@@ -27,7 +27,8 @@ ask_secret() { # $1 = 説明。入力は表示しない
 
 cmd_check() {
   echo "▶ 本番の状態"
-  curl -fsS "$SITE_URL/api/health" && echo
+  # 問題があるときは 503 と中身(どこが失敗したか)が返るので、捨てずに表示する
+  curl -sS -w '\n(HTTP %{http_code})\n' "$SITE_URL/api/health"
   echo
   echo "見かた: feedback_table=ok なら SQL は実行済み。missing なら ./scripts/setup.sh sql を実行してください"
 }
