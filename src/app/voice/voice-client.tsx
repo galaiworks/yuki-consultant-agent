@@ -91,7 +91,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const sentAt = useRef(0);
   const [waitSec, setWaitSec] = useState<number | null>(null);
 
+  // 再生 1 回ごとの番号。失敗時に error と play() の失敗が両方来ても、次へ進むのは 1 回だけにする
+  const attempt = useRef(0);
+
   const playNext = useCallback(() => {
+    const id = ++attempt.current;
     const el = player.current;
     const next = queue.current.shift();
     if (!el || !next) {
@@ -106,8 +110,19 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
     }
     setPhase("speaking");
     el.src = `data:audio/mpeg;base64,${next}`;
-    el.play().catch(() => playNext());
+    el.play().catch(() => advanceRef.current(id));
   }, []);
+
+  /** 再生 id の再生が終わった(または失敗した)ら、次の文へ進む。同じ id では 1 回だけ */
+  const advance = useCallback(
+    (id: number) => {
+      if (id !== attempt.current || !playing.current) return;
+      playNext();
+    },
+    [playNext],
+  );
+  const advanceRef = useRef(advance);
+  advanceRef.current = advance;
 
   useEffect(
     () => () => {
@@ -246,8 +261,8 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       )}
       <audio
         ref={player}
-        onEnded={() => playing.current && playNext()}
-        onError={() => playing.current && playNext()}
+        onEnded={() => advance(attempt.current)}
+        onError={() => advance(attempt.current)}
         preload="none"
       />
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>
