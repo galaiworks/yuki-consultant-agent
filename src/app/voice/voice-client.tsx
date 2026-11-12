@@ -18,9 +18,58 @@ function pickMime(): string {
   return "";
 }
 
+/** 話し終わったとみなす無音の長さ(ミリ秒)と、1 回の録音の上限 */
+const SILENCE_MS = 1200;
+const MAX_RECORD_MS = 90_000;
+/** これより大きい音を「話している」とみなす(0〜1 の音量) */
+const VOICE_LEVEL = 0.02;
+
+/**
+ * 録音中の音量を見て、話し終わって少し黙ったら onSilence を呼ぶ。
+ * 一度も話し声が聞こえないうちは止めない。止めるための関数を返す。
+ * ブラウザが音量を取れないとき(古い iPhone など)は何もしない(ボタンで止められる)。
+ */
+function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
+  let ctx: AudioContext;
+  let analyser: AnalyserNode;
+  try {
+    ctx = new AudioContext();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+  } catch {
+    return () => {};
+  }
+  void ctx.resume().catch(() => {});
+  const data = new Float32Array(analyser.fftSize);
+  const started = Date.now();
+  let heard = false;
+  let lastVoice = Date.now();
+  const timer = setInterval(() => {
+    analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const level = Math.sqrt(sum / data.length);
+    const now = Date.now();
+    if (level > VOICE_LEVEL) {
+      heard = true;
+      lastVoice = now;
+    }
+    if ((heard && now - lastVoice > SILENCE_MS) || now - started > MAX_RECORD_MS) {
+      stop();
+      onSilence();
+    }
+  }, 100);
+  function stop() {
+    clearInterval(timer);
+    void ctx.close().catch(() => {});
+  }
+  return stop;
+}
+
 const LABEL: Record<Phase, string> = {
-  idle: "ボタンを押してから話し、話し終わったらもう一度押してください",
-  recording: "聞いています…話し終わったらボタンを押してください",
+  idle: "ボタンを押して話してください。話し終わって少し黙ると、自動で YUKI に届きます",
+  recording: "聞いています…話し終わったら少し黙るか、ボタンを押してください",
   thinking: "YUKI が考えています…",
   speaking: "YUKI が話しています",
 };
@@ -34,6 +83,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
   const player = useRef<HTMLAudioElement | null>(null);
+  const stopWatch = useRef<() => void>(() => {});
   // 文ごとに届く YUKI の声を、届いた順に 1 つずつ再生する
   const queue = useRef<string[]>([]);
   const playing = useRef(false);
@@ -59,7 +109,13 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
     el.play().catch(() => playNext());
   }, []);
 
-  useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
+  useEffect(
+    () => () => {
+      stopWatch.current();
+      recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
 
   const send = useCallback(
     async (blob: Blob, durationSec: number) => {
@@ -123,7 +179,8 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const toggle = useCallback(async () => {
     setError(null);
     if (phase === "recording") {
-      recorder.current?.stop();
+      stopWatch.current();
+      if (recorder.current?.state === "recording") recorder.current.stop();
       return;
     }
     if (phase !== "idle") return;
@@ -140,6 +197,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       chunks.current = [];
       rec.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
       rec.onstop = () => {
+        stopWatch.current();
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks.current, { type: rec.mimeType || mime || "audio/webm" });
         void send(blob, (Date.now() - startedAt.current) / 1000);
@@ -147,6 +205,10 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       recorder.current = rec;
       rec.start();
       startedAt.current = Date.now();
+      // 話し終わって少し黙ったら、ボタンを押さなくても送る
+      stopWatch.current = watchSilence(stream, () => {
+        if (rec.state === "recording") rec.stop();
+      });
       setPhase("recording");
     } catch {
       setError("マイクを使えませんでした。ブラウザでマイクの使用を許可してください");

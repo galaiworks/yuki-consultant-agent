@@ -1,6 +1,6 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { anthropic } from "@/lib/agents/client";
-import { MODELS } from "@/lib/config";
+import { appConfig, MODELS } from "@/lib/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +17,11 @@ export async function GET() {
     supabaseService: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     cron: Boolean(process.env.CRON_SECRET),
   };
+  // あると良いもの(無くても動くので ok の判定には入れない)
+  const optional = {
+    voice: appConfig.voiceEnabled,
+    embeddings: Boolean(process.env.VOYAGE_API_KEY),
+  };
 
   let database: string;
   try {
@@ -29,6 +34,26 @@ export async function GET() {
     database = "error: not configured";
   }
 
+  // YUKI さんのデータが取り込まれたか(件数だけ。中身は返さない)
+  let knowledge: Record<string, number | string>;
+  try {
+    const admin = createSupabaseAdminClient();
+    const count = async (q: PromiseLike<{ count: number | null; error: { code?: string } | null }>) => {
+      const { count: n, error } = await q;
+      return error ? `error: ${error.code ?? "unknown"}` : (n ?? 0);
+    };
+    const [personaLayers, videos, testSamples, chunks, embedded] = await Promise.all([
+      count(admin.from("persona_layers").select("key", { count: "exact", head: true })),
+      count(admin.from("knowledge_sources").select("id", { count: "exact", head: true }).eq("is_test", false)),
+      count(admin.from("knowledge_sources").select("id", { count: "exact", head: true }).eq("is_test", true)),
+      count(admin.from("knowledge_chunks").select("id", { count: "exact", head: true })),
+      count(admin.from("knowledge_chunks").select("id", { count: "exact", head: true }).not("embedding", "is", null)),
+    ]);
+    knowledge = { persona_layers: personaLayers, videos, test_samples: testSamples, chunks, embedded_chunks: embedded };
+  } catch {
+    knowledge = { error: "not configured" };
+  }
+
   let claude: string;
   try {
     await anthropic().models.retrieve(MODELS.lead);
@@ -38,5 +63,5 @@ export async function GET() {
   }
 
   const ok = Object.values(env).every(Boolean) && database.startsWith("ok") && claude === "ok";
-  return Response.json({ ok, env, database, claude }, { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } });
+  return Response.json({ ok, env, optional, database, knowledge, claude }, { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } });
 }

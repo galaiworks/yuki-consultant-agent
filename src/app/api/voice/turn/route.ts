@@ -15,6 +15,8 @@ export const maxDuration = 120;
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const UUID = /^[0-9a-f-]{36}$/i;
+/** これより短い発言は相づちとみなし、動画の検索を省く */
+const SHORT_UTTERANCE = 8;
 
 const ACCESS_MESSAGES = {
   no_subscription: "ご利用には有効なプランか特別チケットが必要です。",
@@ -90,7 +92,8 @@ export async function POST(req: Request) {
     supabase.from("profiles").select("display_name, company_name, industry").eq("id", user.id).single(),
     supabase.from("client_memories").select("fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),
     supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(12),
-    searchKnowledge(admin, userText, 4).catch(() => []),
+    // 「はい」「なるほど」のような短い相づちでは動画を探さない(待ち時間を減らす)
+    userText.length < SHORT_UTTERANCE ? Promise.resolve([]) : searchKnowledge(admin, userText, 4).catch(() => []),
   ]);
   const p = (profile.data ?? {}) as { display_name?: string | null; company_name?: string | null; industry?: string | null };
   const context = [
