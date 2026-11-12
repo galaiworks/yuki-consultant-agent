@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { VoiceEvent } from "@/lib/voice/sentences";
 
 type Line = { who: "you" | "yuki"; text: string };
 
@@ -33,39 +34,91 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
   const player = useRef<HTMLAudioElement | null>(null);
+  // 文ごとに届く YUKI の声を、届いた順に 1 つずつ再生する
+  const queue = useRef<string[]>([]);
+  const playing = useRef(false);
+  const replyDone = useRef(true);
+  const sentAt = useRef(0);
+  const [waitSec, setWaitSec] = useState<number | null>(null);
+
+  const playNext = useCallback(() => {
+    const el = player.current;
+    const next = queue.current.shift();
+    if (!el || !next) {
+      playing.current = false;
+      if (replyDone.current) setPhase((p) => (p === "speaking" || p === "thinking" ? "idle" : p));
+      return;
+    }
+    playing.current = true;
+    if (sentAt.current) {
+      setWaitSec((Date.now() - sentAt.current) / 1000);
+      sentAt.current = 0;
+    }
+    setPhase("speaking");
+    el.src = `data:audio/mpeg;base64,${next}`;
+    el.play().catch(() => playNext());
+  }, []);
 
   useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
 
-  const send = useCallback(async (blob: Blob, durationSec: number) => {
-    setPhase("thinking");
-    const form = new FormData();
-    form.append("audio", blob, "voice");
-    form.append("durationSec", String(Math.round(durationSec)));
-    if (conversationId.current) form.append("conversationId", conversationId.current);
-    try {
-      const res = await fetch("/api/voice/turn", { method: "POST", body: form });
-      const data = (await res.json()) as {
-        conversationId?: string;
-        userText?: string;
-        replyText?: string;
-        audio?: string | null;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? "うまくいきませんでした");
-      conversationId.current = data.conversationId ?? conversationId.current;
-      setLines((prev) => [...prev, { who: "you", text: data.userText ?? "" }, { who: "yuki", text: data.replyText ?? "" }]);
-      if (data.audio && player.current) {
-        player.current.src = `data:audio/mpeg;base64,${data.audio}`;
-        setPhase("speaking");
-        await player.current.play().catch(() => setPhase("idle"));
-      } else {
-        setPhase("idle");
+  const send = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      setPhase("thinking");
+      setWaitSec(null);
+      sentAt.current = Date.now();
+      queue.current = [];
+      replyDone.current = false;
+      const form = new FormData();
+      form.append("audio", blob, "voice");
+      form.append("durationSec", String(Math.round(durationSec)));
+      if (conversationId.current) form.append("conversationId", conversationId.current);
+      try {
+        const res = await fetch("/api/voice/turn", { method: "POST", body: form });
+        if (!res.ok || !res.body) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error ?? "うまくいきませんでした");
+        }
+        // 1 行 1 JSON で、文字と声が文ごとに届く
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let yukiLine = -1;
+        const handle = (event: VoiceEvent) => {
+          if (event.type === "heard") {
+            conversationId.current = event.conversationId;
+            setLines((prev) => {
+              yukiLine = prev.length + 1;
+              return [...prev, { who: "you", text: event.userText }, { who: "yuki", text: "" }];
+            });
+          } else if (event.type === "text") {
+            setLines((prev) => prev.map((l, i) => (i === yukiLine ? { ...l, text: l.text + event.text } : l)));
+          } else if (event.type === "audio") {
+            queue.current.push(event.audio);
+            if (!playing.current) playNext();
+          } else if (event.type === "error") {
+            setError(event.error);
+          }
+        };
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (line) handle(JSON.parse(line) as VoiceEvent);
+          }
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        replyDone.current = true;
+        if (!playing.current) setPhase("idle");
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("idle");
-    }
-  }, []);
+    },
+    [playNext],
+  );
 
   const toggle = useCallback(async () => {
     setError(null);
@@ -115,6 +168,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         <span className="muted" aria-live="polite">{LABEL[phase]}</span>
       </div>
       {error && <p className="error">{error}</p>}
+      {waitSec !== null && (
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          話し終わってから YUKI の声が出るまで: {waitSec.toFixed(1)} 秒
+        </p>
+      )}
       {lines.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {lines.map((l, i) => (
@@ -126,8 +184,8 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       )}
       <audio
         ref={player}
-        onEnded={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
-        onError={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
+        onEnded={() => playing.current && playNext()}
+        onError={() => playing.current && playNext()}
         preload="none"
       />
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>

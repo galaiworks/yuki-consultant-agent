@@ -22,9 +22,14 @@ export async function transcribe(audio: Blob, filename: string): Promise<string>
   return (json.text ?? "").trim();
 }
 
-export async function synthesize(text: string): Promise<ArrayBuffer> {
+/**
+ * 文字を YUKI の声にする。previousText(直前に話した文)を渡すと、
+ * 文ごとに分けて作っても前後のつながりが自然な抑揚になる。
+ * 届き始めが速い stream 版の窓口を使う。
+ */
+export async function synthesize(text: string, opts: { previousText?: string } = {}): Promise<ArrayBuffer> {
   const res = await fetch(
-    `${API}/text-to-speech/${encodeURIComponent(appConfig.elevenLabsVoiceId)}?output_format=${VOICE.outputFormat}`,
+    `${API}/text-to-speech/${encodeURIComponent(appConfig.elevenLabsVoiceId)}/stream?output_format=${VOICE.outputFormat}`,
     {
       method: "POST",
       headers: { "xi-api-key": appConfig.elevenLabsApiKey, "content-type": "application/json" },
@@ -32,6 +37,7 @@ export async function synthesize(text: string): Promise<ArrayBuffer> {
         model_id: VOICE.model,
         language_code: VOICE.languageCode,
         text,
+        ...(opts.previousText ? { previous_text: opts.previousText.slice(-500) } : {}),
         voice_settings: VOICE.settings,
       }),
     },
