@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { VoiceEvent } from "@/lib/voice/sentences";
 
 type Line = { who: "you" | "yuki"; text: string };
 
@@ -17,9 +18,58 @@ function pickMime(): string {
   return "";
 }
 
+/** 話し終わったとみなす無音の長さ(ミリ秒)と、1 回の録音の上限 */
+const SILENCE_MS = 1200;
+const MAX_RECORD_MS = 90_000;
+/** これより大きい音を「話している」とみなす(0〜1 の音量) */
+const VOICE_LEVEL = 0.02;
+
+/**
+ * 録音中の音量を見て、話し終わって少し黙ったら onSilence を呼ぶ。
+ * 一度も話し声が聞こえないうちは止めない。止めるための関数を返す。
+ * ブラウザが音量を取れないとき(古い iPhone など)は何もしない(ボタンで止められる)。
+ */
+function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
+  let ctx: AudioContext;
+  let analyser: AnalyserNode;
+  try {
+    ctx = new AudioContext();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+  } catch {
+    return () => {};
+  }
+  void ctx.resume().catch(() => {});
+  const data = new Float32Array(analyser.fftSize);
+  const started = Date.now();
+  let heard = false;
+  let lastVoice = Date.now();
+  const timer = setInterval(() => {
+    analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const level = Math.sqrt(sum / data.length);
+    const now = Date.now();
+    if (level > VOICE_LEVEL) {
+      heard = true;
+      lastVoice = now;
+    }
+    if ((heard && now - lastVoice > SILENCE_MS) || now - started > MAX_RECORD_MS) {
+      stop();
+      onSilence();
+    }
+  }, 100);
+  function stop() {
+    clearInterval(timer);
+    void ctx.close().catch(() => {});
+  }
+  return stop;
+}
+
 const LABEL: Record<Phase, string> = {
-  idle: "ボタンを押してから話し、話し終わったらもう一度押してください",
-  recording: "聞いています…話し終わったらボタンを押してください",
+  idle: "ボタンを押して話してください。話し終わって少し黙ると、自動で YUKI に届きます",
+  recording: "聞いています…話し終わったら少し黙るか、ボタンを押してください",
   thinking: "YUKI が考えています…",
   speaking: "YUKI が話しています",
 };
@@ -33,44 +83,119 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
   const player = useRef<HTMLAudioElement | null>(null);
+  const stopWatch = useRef<() => void>(() => {});
+  // 文ごとに届く YUKI の声を、届いた順に 1 つずつ再生する
+  const queue = useRef<string[]>([]);
+  const playing = useRef(false);
+  const replyDone = useRef(true);
+  const sentAt = useRef(0);
+  const [waitSec, setWaitSec] = useState<number | null>(null);
 
-  useEffect(() => () => recorder.current?.stream.getTracks().forEach((t) => t.stop()), []);
+  // 再生 1 回ごとの番号。失敗時に error と play() の失敗が両方来ても、次へ進むのは 1 回だけにする
+  const attempt = useRef(0);
 
-  const send = useCallback(async (blob: Blob, durationSec: number) => {
-    setPhase("thinking");
-    const form = new FormData();
-    form.append("audio", blob, "voice");
-    form.append("durationSec", String(Math.round(durationSec)));
-    if (conversationId.current) form.append("conversationId", conversationId.current);
-    try {
-      const res = await fetch("/api/voice/turn", { method: "POST", body: form });
-      const data = (await res.json()) as {
-        conversationId?: string;
-        userText?: string;
-        replyText?: string;
-        audio?: string | null;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? "うまくいきませんでした");
-      conversationId.current = data.conversationId ?? conversationId.current;
-      setLines((prev) => [...prev, { who: "you", text: data.userText ?? "" }, { who: "yuki", text: data.replyText ?? "" }]);
-      if (data.audio && player.current) {
-        player.current.src = `data:audio/mpeg;base64,${data.audio}`;
-        setPhase("speaking");
-        await player.current.play().catch(() => setPhase("idle"));
-      } else {
-        setPhase("idle");
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setPhase("idle");
+  const playNext = useCallback(() => {
+    const id = ++attempt.current;
+    const el = player.current;
+    const next = queue.current.shift();
+    if (!el || !next) {
+      playing.current = false;
+      if (replyDone.current) setPhase((p) => (p === "speaking" || p === "thinking" ? "idle" : p));
+      return;
     }
+    playing.current = true;
+    if (sentAt.current) {
+      setWaitSec((Date.now() - sentAt.current) / 1000);
+      sentAt.current = 0;
+    }
+    setPhase("speaking");
+    el.src = `data:audio/mpeg;base64,${next}`;
+    el.play().catch(() => advanceRef.current(id));
   }, []);
+
+  /** 再生 id の再生が終わった(または失敗した)ら、次の文へ進む。同じ id では 1 回だけ */
+  const advance = useCallback(
+    (id: number) => {
+      if (id !== attempt.current || !playing.current) return;
+      playNext();
+    },
+    [playNext],
+  );
+  const advanceRef = useRef(advance);
+  advanceRef.current = advance;
+
+  useEffect(
+    () => () => {
+      stopWatch.current();
+      recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
+  const send = useCallback(
+    async (blob: Blob, durationSec: number) => {
+      setPhase("thinking");
+      setWaitSec(null);
+      sentAt.current = Date.now();
+      queue.current = [];
+      replyDone.current = false;
+      const form = new FormData();
+      form.append("audio", blob, "voice");
+      form.append("durationSec", String(Math.round(durationSec)));
+      if (conversationId.current) form.append("conversationId", conversationId.current);
+      try {
+        const res = await fetch("/api/voice/turn", { method: "POST", body: form });
+        if (!res.ok || !res.body) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error ?? "うまくいきませんでした");
+        }
+        // 1 行 1 JSON で、文字と声が文ごとに届く
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let yukiLine = -1;
+        const handle = (event: VoiceEvent) => {
+          if (event.type === "heard") {
+            conversationId.current = event.conversationId;
+            setLines((prev) => {
+              yukiLine = prev.length + 1;
+              return [...prev, { who: "you", text: event.userText }, { who: "yuki", text: "" }];
+            });
+          } else if (event.type === "text") {
+            setLines((prev) => prev.map((l, i) => (i === yukiLine ? { ...l, text: l.text + event.text } : l)));
+          } else if (event.type === "audio") {
+            queue.current.push(event.audio);
+            if (!playing.current) playNext();
+          } else if (event.type === "error") {
+            setError(event.error);
+          }
+        };
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl: number;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (line) handle(JSON.parse(line) as VoiceEvent);
+          }
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        replyDone.current = true;
+        if (!playing.current) setPhase("idle");
+      }
+    },
+    [playNext],
+  );
 
   const toggle = useCallback(async () => {
     setError(null);
     if (phase === "recording") {
-      recorder.current?.stop();
+      stopWatch.current();
+      if (recorder.current?.state === "recording") recorder.current.stop();
       return;
     }
     if (phase !== "idle") return;
@@ -87,6 +212,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       chunks.current = [];
       rec.ondataavailable = (e) => e.data.size && chunks.current.push(e.data);
       rec.onstop = () => {
+        stopWatch.current();
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks.current, { type: rec.mimeType || mime || "audio/webm" });
         void send(blob, (Date.now() - startedAt.current) / 1000);
@@ -94,6 +220,10 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       recorder.current = rec;
       rec.start();
       startedAt.current = Date.now();
+      // 話し終わって少し黙ったら、ボタンを押さなくても送る
+      stopWatch.current = watchSilence(stream, () => {
+        if (rec.state === "recording") rec.stop();
+      });
       setPhase("recording");
     } catch {
       setError("マイクを使えませんでした。ブラウザでマイクの使用を許可してください");
@@ -115,6 +245,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         <span className="muted" aria-live="polite">{LABEL[phase]}</span>
       </div>
       {error && <p className="error">{error}</p>}
+      {waitSec !== null && (
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          話し終わってから YUKI の声が出るまで: {waitSec.toFixed(1)} 秒
+        </p>
+      )}
       {lines.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {lines.map((l, i) => (
@@ -126,8 +261,8 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       )}
       <audio
         ref={player}
-        onEnded={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
-        onError={() => setPhase((p) => (p === "speaking" ? "idle" : p))}
+        onEnded={() => advance(attempt.current)}
+        onError={() => advance(attempt.current)}
         preload="none"
       />
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>

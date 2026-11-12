@@ -7,6 +7,7 @@ import { searchKnowledge } from "@/lib/knowledge/search";
 import { loadPersona } from "@/lib/persona";
 import { runVoiceReply } from "@/lib/agents/voice";
 import { synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
+import { SentenceSplitter, type VoiceEvent } from "@/lib/voice/sentences";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,8 @@ export const maxDuration = 120;
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const UUID = /^[0-9a-f-]{36}$/i;
+/** これより短い発言は相づちとみなし、動画の検索を省く */
+const SHORT_UTTERANCE = 8;
 
 const ACCESS_MESSAGES = {
   no_subscription: "ご利用には有効なプランか特別チケットが必要です。",
@@ -22,8 +25,15 @@ const ACCESS_MESSAGES = {
 
 /**
  * 声の 1 往復。相談者の録音を受け取り、文字に起こし、YUKI の返事を作り、YUKI の声にして返す。
+ * 待ち時間を短くするため、返事は書けた文から順に声にして、少しずつ送る(1 行 1 JSON)。
+ * 相談者は最初の 1 文が届いた時点で YUKI の声を聞き始められる。
  */
 export async function POST(req: Request) {
+  const t0 = Date.now();
+  const timings: Record<string, number> = {};
+  const mark = (name: string) => {
+    timings[name] = Date.now() - t0;
+  };
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -48,6 +58,7 @@ export async function POST(req: Request) {
   const reported = Number(form?.get("durationSec"));
   const sttSeconds = Math.min(600, Math.max(1, Number.isFinite(reported) && reported > 0 ? reported : audio.size / 4000));
   const admin = createSupabaseAdminClient();
+  mark("received_ms");
 
   // 1) 声 → 文字
   let userText: string;
@@ -59,6 +70,7 @@ export async function POST(req: Request) {
     console.error(err);
     return Response.json({ error: "声を文字にできませんでした。もう一度お試しください" }, { status: 502 });
   }
+  mark("stt_ms");
   if (!userText) {
     await recordSpeechUsage(admin, { userId: user.id }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds }));
     return Response.json({ error: "うまく聞き取れませんでした。もう一度お話しください" }, { status: 422 });
@@ -73,14 +85,15 @@ export async function POST(req: Request) {
     if (error || !data) return Response.json({ error: "会話を始められませんでした" }, { status: 500 });
     conversationId = data.id as string;
   }
-  // 文字起こしの費用は、このあと返事に失敗しても記録する
-  await recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds }));
-  const [persona, profile, memories, historyRes, hits] = await Promise.all([
+  // 文字起こしの費用は、このあと返事に失敗しても記録する(待ち時間を増やさないよう、準備と同時に行う)
+  const [, persona, profile, memories, historyRes, hits] = await Promise.all([
+    recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds })),
     loadPersona(admin),
     supabase.from("profiles").select("display_name, company_name, industry").eq("id", user.id).single(),
     supabase.from("client_memories").select("fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),
     supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(12),
-    searchKnowledge(admin, userText, 4).catch(() => []),
+    // 「はい」「なるほど」のような短い相づちでは動画を探さない(待ち時間を減らす)
+    userText.length < SHORT_UTTERANCE ? Promise.resolve([]) : searchKnowledge(admin, userText, 4).catch(() => []),
   ]);
   const p = (profile.data ?? {}) as { display_name?: string | null; company_name?: string | null; industry?: string | null };
   const context = [
@@ -89,38 +102,106 @@ export async function POST(req: Request) {
     `# これまでに覚えていること\n${(memories.data ?? []).map((m) => `- ${m.fact as string}`).join("\n") || "- まだありません"}`,
   ].join("\n");
 
-  // 2) 文字 → YUKI の返事
-  let replyText: string;
-  try {
-    replyText = await runVoiceReply({
-      persona,
-      context,
-      history: ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse(),
-      userMessage: userText,
-      hits: hits.filter((h) => !h.is_test),
-      usage: (agent, model, u) => recordUsage(admin, { userId: user.id, conversationId }, agent, model, u),
-      onText: () => {},
-    });
-  } catch (err) {
-    console.error(err);
-    return Response.json({ error: "返事を作れませんでした。少し時間をおいてお試しください" }, { status: 502 });
-  }
+  mark("context_ms");
+  const userId = user.id;
+  const convId = conversationId;
+  const ctx = { userId, conversationId: convId };
 
-  // 1 回の insert だと同じ時刻になり順番が崩れるので、相談者 → YUKI の順に別々に保存する
-  await supabase.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "user", text: userText });
-  // YUKI の返事はサーバーだけが書ける(RLS で利用者は role = 'user' しか書けない)
-  await admin.from("messages").insert({ conversation_id: conversationId, user_id: user.id, role: "assistant", text: replyText });
-  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
+  // 相談者が画面を閉じたら false。返事の保存と費用の記録は最後まで行うが、声づくりはやめる
+  let open = true;
+  const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      open = false;
+    },
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (event: VoiceEvent) => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          open = false;
+        }
+      };
+      send({ type: "heard", conversationId: convId, userText });
 
-  // 3) 返事 → YUKI の声(失敗しても文字の返事は返す)
-  let audioBase64: string | null = null;
-  try {
-    const speakable = toSpeakable(replyText);
-    audioBase64 = Buffer.from(await synthesize(speakable)).toString("base64");
-    await recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_tts", VOICE.model, computeSpeechCost({ ttsChars: speakable.length }));
-  } catch (err) {
-    console.error(err);
-  }
+      // 3) 書けた文から順に YUKI の声にする。声づくりは 1 文ずつ順番に(同時に頼みすぎない)
+      const splitter = new SentenceSplitter();
+      let index = 0;
+      let spoken = "";
+      let ttsChars = 0;
+      let speech: Promise<void> = Promise.resolve();
+      const speak = (sentence: string) => {
+        const i = index++;
+        send({ type: "text", index: i, text: sentence });
+        const speakable = toSpeakable(sentence);
+        const previousText = spoken;
+        spoken += speakable;
+        if (!speakable) return;
+        speech = speech.then(async () => {
+          if (!open) return; // 聞く人がいない声は作らない(費用をかけない)
+          try {
+            const audio = Buffer.from(await synthesize(speakable, { previousText })).toString("base64");
+            ttsChars += speakable.length;
+            if (!("first_audio_ms" in timings)) mark("first_audio_ms");
+            send({ type: "audio", index: i, audio });
+          } catch (err) {
+            console.error(err);
+          }
+        });
+      };
 
-  return Response.json({ conversationId, userText, replyText, audio: audioBase64 });
+      // 2) 文字 → YUKI の返事
+      let replyText = "";
+      try {
+        replyText = await runVoiceReply({
+          persona,
+          context,
+          history: ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse(),
+          userMessage: userText,
+          hits: hits.filter((h) => !h.is_test),
+          usage: (agent, model, u) => recordUsage(admin, ctx, agent, model, u),
+          onText: (delta) => {
+            if (!("first_token_ms" in timings)) mark("first_token_ms");
+            for (const sentence of splitter.push(delta)) {
+              if (!("first_sentence_ms" in timings)) mark("first_sentence_ms");
+              speak(sentence);
+            }
+          },
+        });
+        const rest = splitter.flush();
+        if (rest) speak(rest);
+        mark("reply_ms");
+      } catch (err) {
+        console.error(err);
+        send({ type: "error", error: "返事を作れませんでした。少し時間をおいてお試しください" });
+      }
+
+      if (replyText) {
+        // 1 回の insert だと同じ時刻になり順番が崩れるので、相談者 → YUKI の順に別々に保存する
+        await supabase.from("messages").insert({ conversation_id: convId, user_id: userId, role: "user", text: userText });
+        // YUKI の返事はサーバーだけが書ける(RLS で利用者は role = 'user' しか書けない)
+        await admin.from("messages").insert({ conversation_id: convId, user_id: userId, role: "assistant", text: replyText });
+        await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+      }
+
+      await speech;
+      if (ttsChars > 0) {
+        await recordSpeechUsage(admin, ctx, "voice_tts", VOICE.model, computeSpeechCost({ ttsChars }));
+      }
+      mark("total_ms");
+      // どこで時間がかかっているかを Vercel のログで見られるようにする
+      console.log(JSON.stringify({ event: "voice_turn_timing", sentences: index, ...timings }));
+      if (replyText) send({ type: "done", replyText, timings });
+      if (open) controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store",
+      "x-accel-buffering": "no",
+    },
+  });
 }
