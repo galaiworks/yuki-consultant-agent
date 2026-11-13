@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const run = { text: result.text, citations: result.citations.length, searched };
     const grades: GradeResult[] = [];
     for (const g of c.graders) {
-      grades.push(g.type === "llm" ? await judge(g.name, g.criteria, c.prompt, result.text, usage) : gradeDeterministic(g, run));
+      grades.push(g.type === "llm" ? await judge(g.name, g.criteria, c.prompt, result.text, result.citations, usage) : gradeDeterministic(g, run));
     }
     return Response.json({
       id: c.id,
