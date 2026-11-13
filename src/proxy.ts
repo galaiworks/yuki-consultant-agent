@@ -39,5 +39,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // manifest とアイコンは、ログイン前でも端末が取りに来るため認証の対象外にする
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest$|icons/(?:192|512|maskable-512)$|icon$|apple-icon$).*)"],
 };
