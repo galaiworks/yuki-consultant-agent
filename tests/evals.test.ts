@@ -28,3 +28,24 @@ describe("gradeDeterministic", () => {
     expect(gradeDeterministic({ name: "s", type: "searched" }, run).passed).toBe(true);
   });
 });
+
+describe("buildJudgeContent", () => {
+  it("回答に付いた出典をタイトルと引用つきで採点者に渡す", async () => {
+    const { buildJudgeContent } = await import("@/lib/evals/judge");
+    const text = buildJudgeContent("基準", "相談", "回答", [
+      { title: "動画A", source: "https://youtu.be/aaaaaaaaaaa", cited_text: "本人の言葉" },
+    ]);
+    expect(text).toContain("# 回答に付いた出典");
+    expect(text).toContain("1. 動画A");
+    expect(text).toContain("引用:「本人の言葉」");
+  });
+
+  it("出典が無いときは「出典なし」と明記し、長い引用は切り詰める", async () => {
+    const { buildJudgeContent } = await import("@/lib/evals/judge");
+    expect(buildJudgeContent("基準", "相談", "回答", [])).toContain("(出典なし)");
+    const long = buildJudgeContent("基準", "相談", "回答", [{ title: "", source: "src", cited_text: "あ".repeat(500) }]);
+    expect(long).toContain("1. src");
+    expect(long).toContain(`${"あ".repeat(400)}…`);
+    expect(long).not.toContain("あ".repeat(401));
+  });
+});
