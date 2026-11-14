@@ -17,7 +17,7 @@
    - おすすめ: Supabase の Project Settings → Integrations → GitHub でこのリポジトリをつなぎ、「Deploy to production」をオン。`main` に入った `supabase/migrations/` が自動で反映される
    - 手動の場合: `supabase/migrations/` のファイルを古い順に SQL Editor で実行
    - Authentication → Sign In / Providers で **「Allow new users to sign up」をオフ**(招待制にするため)
-   - Authentication → URL Configuration に `https://<本番ドメイン>/auth/callback` を追加
+   - Authentication → URL Configuration に `https://<本番ドメイン>/auth/confirm`(メールのログインリンクの戻り先)と `https://<本番ドメイン>/auth/callback`(旧方式・招待スクリプト用)を追加
 2. `.env.example` を `.env.local` にコピーして値を入れる
 3. 依存関係を入れて起動
    ```bash
