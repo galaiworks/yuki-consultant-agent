@@ -23,10 +23,10 @@ function citationKey(c: Citation): string {
   try {
     const u = new URL(c.source);
     if (u.hostname === "youtu.be") return `yt:${u.pathname.slice(1)}`;
-    if (u.hostname.endsWith("youtube.com")) {
-      // watch?v=ID・/embed/ID・/shorts/ID・/live/ID を同じ動画として扱う
+    if (u.hostname === "youtube.com" || u.hostname.endsWith(".youtube.com")) {
+      // watch?v=ID・/embed/ID・/shorts/ID・/live/ID を同じ動画として扱う。動画 ID が取れなければ URL のまま
       const id = u.searchParams.get("v") ?? u.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/)?.[1];
-      return `yt:${id ?? u.pathname}`;
+      return id ? `yt:${id}` : c.source;
     }
     // YouTube 以外は URL をそのまま使う(パラメータやハッシュで資料を見分けるサイトがあるため)
     return c.source;
