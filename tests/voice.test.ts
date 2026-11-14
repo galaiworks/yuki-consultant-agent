@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { toSpeakable } from "@/lib/voice/elevenlabs";
 import { computeSpeechCost } from "@/lib/usage";
-import { SentenceSplitter, splitForSpeech } from "@/lib/voice/sentences";
+import { addThinkingPauses, bracketDepth, endsWithQuestion, SentenceSplitter } from "@/lib/voice/sentences";
 import { breakLongParagraphs } from "@/lib/text/wrap";
 
 describe("toSpeakable", () => {
@@ -35,29 +35,6 @@ describe("SentenceSplitter", () => {
   });
 });
 
-describe("splitForSpeech", () => {
-  it("読点は短い間、句点は長い間として区切る。閉じかっこは前に含める", () => {
-    expect(splitForSpeech("結論から言うと、一人に絞ることです。「まずは一人」と決めましょう！次")).toEqual([
-      { text: "結論から言うと、", pause: "comma" },
-      { text: "一人に絞ることです。", pause: "period" },
-      { text: "「まずは一人」と決めましょう！", pause: "period" },
-      { text: "次", pause: "none" },
-    ]);
-  });
-
-  it("短い読点区切りは次とまとめ、数字の半角カンマでは切らない", () => {
-    expect(splitForSpeech("はい、売上は1,000万円を目指しましょう。")).toEqual([
-      { text: "はい、売上は1,000万円を目指しましょう。", pause: "period" },
-    ]);
-  });
-
-  it("「。」」のように句点と閉じかっこが続いても 1 つの区切りにする", () => {
-    expect(splitForSpeech("彼は「やります。」と言った。")).toEqual([
-      { text: "彼は「やります。」", pause: "period" },
-      { text: "と言った。", pause: "period" },
-    ]);
-  });
-});
 
 describe("breakLongParagraphs", () => {
   it("短い段落はそのまま", () => {
@@ -80,11 +57,6 @@ describe("breakLongParagraphs", () => {
 });
 
 describe("Codex 指摘の境界ケース", () => {
-  it("全角の桁区切りでは切らない", () => {
-    expect(splitForSpeech("毎月のお支払い金額は１，０００円です。")).toEqual([
-      { text: "毎月のお支払い金額は１，０００円です。", pause: "period" },
-    ]);
-  });
 
   it("次の文の太字の始まりを、前の文の閉じと取り違えない", () => {
     const a = "あ".repeat(49) + "。";
@@ -96,5 +68,42 @@ describe("Codex 指摘の境界ケース", () => {
     const a = "《" + "あ".repeat(55) + "。》";
     const b = "次の文章です。";
     expect(breakLongParagraphs(a + b)).toBe(`${a}\n${b}`);
+  });
+});
+
+describe("addThinkingPauses", () => {
+  it("相談者への問いのあとに話が続くときだけ間を入れる", () => {
+    expect(
+      addThinkingPauses("あなたのお客さまは、なぜあなたから買うのでしょうか。答えにくいですよね。でも、ここが大事です。"),
+    ).toBe("あなたのお客さまは、なぜあなたから買うのでしょうか。 [pause] 答えにくいですよね。でも、ここが大事です。");
+    expect(addThinkingPauses("続けますか？では次へ。")).toBe("続けますか？ [pause] では次へ。");
+  });
+  it("最後の問い・句読点・かっこの中の問いには入れない", () => {
+    expect(addThinkingPauses("まずは一人に絞りましょう。誰に届けたいですか？")).toBe("まずは一人に絞りましょう。誰に届けたいですか？");
+    expect(addThinkingPauses("結論から言うと、一人に絞ることです。")).toBe("結論から言うと、一人に絞ることです。");
+    expect(addThinkingPauses("「なぜ？」と聞かれます。答えは一つです。")).toBe("「なぜ？」と聞かれます。答えは一つです。");
+  });
+  it("かっこの中の問いには入れず、「？！」や連続する問いには入れる", () => {
+    expect(addThinkingPauses("「誰に届けたいですか？その一人を想像してください」と伝えます。次へ。")).toBe(
+      "「誰に届けたいですか？その一人を想像してください」と伝えます。次へ。",
+    );
+    expect(addThinkingPauses("どんな事業をしたいですか？！少し考えてみてください。")).toBe(
+      "どんな事業をしたいですか？！ [pause] 少し考えてみてください。",
+    );
+    expect(addThinkingPauses("何に困っていますか？理想はどんな状態ですか？順に整理しましょう。")).toBe(
+      "何に困っていますか？ [pause] 理想はどんな状態ですか？ [pause] 順に整理しましょう。",
+    );
+  });
+  it("文を区切って渡しても、前の文から続くかっこの中には入れない", () => {
+    const a = "「まずは現状を整理しましょう。";
+    const b = "何に困っていますか？理想はどんな状態ですか？順に整理しましょう」と伝えます。";
+    expect(addThinkingPauses(b, bracketDepth(a))).toBe(b);
+    expect(bracketDepth(a + b)).toBe(0);
+  });
+  it("文が問いで終わるかを判定する", () => {
+    expect(endsWithQuestion("本当ですか？！")).toBe(true);
+    expect(endsWithQuestion("なぜ買うのでしょうか。")).toBe(true);
+    expect(endsWithQuestion("続けますか？ ")).toBe(true);
+    expect(endsWithQuestion("大事なところです。")).toBe(false);
   });
 });

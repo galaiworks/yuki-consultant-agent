@@ -25,11 +25,6 @@ export const VOICE = {
   languageCode: "ja",
   settings: { stability: 0.5, similarity_boost: 0.9, style: 0, use_speaker_boost: true },
   outputFormat: "mp3_44100_128",
-  /**
-   * 句読点のあとに挟む無音の長さ(ミリ秒)。相手が考える「間」をつくる。
-   * 声のモデル(v4)は秒数で止める指定に対応していないため、区切りごとに声を作って無音を挟む。
-   */
-  pauseMs: { comma: 350, period: 800 },
 } as const;
 
 /** open = 招待済みなら無料で利用 / paid = サブスクかチケットが必要 */
