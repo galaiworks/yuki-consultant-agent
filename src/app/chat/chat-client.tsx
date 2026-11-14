@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import { breakLongParagraphs } from "@/lib/text/wrap";
 
 type Citation = { title: string; source: string; cited_text: string };
 export type InitialMessage = { id: string; role: "user" | "assistant"; text: string; citations: Citation[] };
@@ -136,7 +137,7 @@ export function ChatClient(props: {
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.role}`}>
           <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
-          <div className="body">{m.text ? renderInline(m.text) : m.pending ? "考えています…" : ""}</div>
+          <div className="body">{m.text ? renderInline(m.role === "assistant" ? breakLongParagraphs(m.text) : m.text) : m.pending ? "考えています…" : ""}</div>
           {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
           {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
           {m.citations?.length > 0 && (
@@ -201,97 +202,226 @@ function silentWavUrl(): string {
   return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
 }
 
+/** 無音の WAV は 1 つだけ作って使い回す(小さいので解放しない) */
+let silentUrl: string | null = null;
+function silentWav(): string {
+  silentUrl ??= silentWavUrl();
+  return silentUrl;
+}
+
+/** base64 の mp3 を、再生できる blob URL にする */
+function mp3Url(base64: string): string {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+}
+
+type Clip = { url: string; pauseMs: number };
+
 /**
- * YUKI の声で回答を聞く。一度作った音声はページを開いている間は使い回す。
+ * YUKI の声で回答を聞く。声は読点・句点の区切りごとに届くので、届いた順に鳴らし、
+ * 区切りのあとに決まった長さの無音(間)を置く。一度作った声はページを開いている間は使い回す。
  * Safari は「押してから時間がたった再生」を自動再生として止めるため、
- * 押した瞬間に無音を鳴らして <audio> を使える状態にしてから、届いた音声に差し替えて鳴らす。
+ * 押した瞬間に無音を鳴らして <audio> を使える状態にしてから、届いた声に差し替えて鳴らす。
  */
 function Listen({ messageId }: { messageId: string }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
   const [reason, setReason] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
-  const url = useRef<string | null>(null);
-  // 音声を作っている間は、もう一度押しても 2 本目を頼まない(費用が二重にかかるため)
-  const busy = useRef(false);
+  // 届いた声(区切りごと)と、声がすべて届いたか
+  const clips = useRef<Clip[]>([]);
+  const complete = useRef(false);
+  // 声を作っている間は、もう一度押しても 2 本目を頼まない(費用が二重にかかるため)
+  const fetching = useRef(false);
+  // 再生の状態。pos は次に鳴らす区切り、current は今鳴らしている声の URL
+  const active = useRef(false);
+  const waiting = useRef(false);
+  const pos = useRef(0);
+  const current = useRef<string | null>(null);
+  const gapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 押すたび(止める・聞くのたび)に増やす番号。古い再生の成功・失敗の知らせは無視する
+  const session = useRef(0);
+  const abort = useRef<AbortController | null>(null);
   // 画面から消えたら(別の相談に移ったら)、鳴らさない・止める・後始末する
   const mounted = useRef(true);
+
+  const clearGap = () => {
+    if (gapTimer.current) clearTimeout(gapTimer.current);
+    gapTimer.current = null;
+  };
+  const dropClips = () => {
+    clips.current.forEach((c) => URL.revokeObjectURL(c.url));
+    clips.current = [];
+    complete.current = false;
+  };
+
   useEffect(() => {
     mounted.current = true;
     const el = audio.current;
     return () => {
       mounted.current = false;
+      active.current = false;
+      clearGap();
+      abort.current?.abort();
       el?.pause();
-      if (url.current) URL.revokeObjectURL(url.current);
-      url.current = null;
+      dropClips();
     };
   }, []);
 
-  async function toggle() {
+  function fail(message: string) {
+    active.current = false;
+    waiting.current = false;
+    clearGap();
+    audio.current?.pause();
+    setState("error");
+    setReason(message);
+  }
+
+  /** pos 番目の区切りを鳴らす。まだ届いていなければ、届くのを待つ */
+  function playAt() {
     const el = audio.current;
-    if (!el || busy.current) return;
-    if (state === "playing") {
+    if (!el || !active.current || !mounted.current) return;
+    const clip = clips.current[pos.current];
+    const id = session.current;
+    if (!clip) {
+      if (complete.current) {
+        active.current = false;
+        current.current = null;
+        setState("idle");
+      } else {
+        waiting.current = true;
+      }
+      return;
+    }
+    waiting.current = false;
+    current.current = clip.url;
+    el.src = clip.url;
+    el.play().then(
+      () => {
+        if (mounted.current && active.current && id === session.current) setState("playing");
+      },
+      (err: unknown) => {
+        if (!mounted.current || !active.current || id !== session.current) return;
+        fail(
+          err instanceof DOMException && err.name === "NotAllowedError"
+            ? "ブラウザが再生を止めました。もう一度押してください"
+            : "読み上げできませんでした",
+        );
+      },
+    );
+  }
+
+  /** 1 区切り鳴り終わったら、決まった間を置いて次へ */
+  function onClipEnded(src: string) {
+    if (!active.current || src !== current.current) return; // 無音や古い声の終わりでは何もしない
+    const clip = clips.current[pos.current];
+    pos.current += 1;
+    current.current = null;
+    clearGap();
+    const id = session.current;
+    gapTimer.current = setTimeout(() => {
+      gapTimer.current = null;
+      if (id === session.current) playAt();
+    }, clip?.pauseMs ?? 0);
+  }
+
+  /** 声を区切りごとに受け取る。届いたら、待っている再生を進める */
+  async function load() {
+    fetching.current = true;
+    const ctrl = new AbortController();
+    abort.current = ctrl;
+    try {
+      const res = await fetch("/api/voice/speak", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messageId }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? "読み上げできませんでした。少し時間をおいてお試しください");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let done = false;
+      for (;;) {
+        const { value, done: end } = await reader.read();
+        if (end) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          const ev = JSON.parse(line) as
+            | { type: "audio"; audio: string; pauseMs: number }
+            | { type: "done" }
+            | { type: "error"; error: string };
+          if (ev.type === "audio") {
+            if (!mounted.current) return;
+            clips.current.push({ url: mp3Url(ev.audio), pauseMs: ev.pauseMs ?? 0 });
+            if (active.current && waiting.current) playAt();
+          } else if (ev.type === "done") {
+            done = true;
+          } else if (ev.type === "error") {
+            throw new Error(ev.error);
+          }
+        }
+      }
+      if (!done) throw new Error("読み上げが途中で止まりました。もう一度押してください");
+      complete.current = true;
+      if (active.current && waiting.current) playAt();
+    } catch (err) {
+      if (!mounted.current || ctrl.signal.aborted) return;
+      // 途中までの声は使い回さない(次に押したときに最初から作り直す)
+      dropClips();
+      fail(err instanceof Error && err.message ? err.message : "読み上げできませんでした");
+    } finally {
+      fetching.current = false;
+    }
+  }
+
+  function toggle() {
+    const el = audio.current;
+    if (!el) return;
+    session.current += 1;
+    if (active.current) {
+      // 止める。作りかけの声はそのまま受け取り続け、次に押したときに使い回す
+      active.current = false;
+      waiting.current = false;
+      clearGap();
       el.pause();
       setState("idle");
       return;
     }
     setReason("");
-    try {
-      if (!url.current) {
-        busy.current = true;
-        setState("loading");
-        // 押した瞬間(await より前)に無音を再生しておく
-        const silent = silentWavUrl();
-        try {
-          el.src = silent;
-          void el.play().catch(() => {});
-          const res = await fetch("/api/voice/speak", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ messageId }),
-          });
-          if (!res.ok) {
-            const j = (await res.json().catch(() => ({}))) as { error?: string };
-            throw new Error(j.error ?? "読み上げできませんでした。少し時間をおいてお試しください");
-          }
-          const blob = await res.blob();
-          if (!mounted.current) return;
-          url.current = URL.createObjectURL(blob);
-          el.src = url.current;
-        } finally {
-          URL.revokeObjectURL(silent);
-          busy.current = false;
-        }
-      }
-      if (!mounted.current) return;
-      await el.play();
-      if (mounted.current) setState("playing");
-    } catch (err) {
-      if (!mounted.current) return;
-      setState("error");
-      setReason(
-        err instanceof DOMException && err.name === "NotAllowedError"
-          ? "ブラウザが再生を止めました。もう一度押してください"
-          : err instanceof Error && err.message
-            ? err.message
-            : "読み上げできませんでした",
-      );
+    active.current = true;
+    pos.current = 0;
+    current.current = null;
+    if (clips.current.length > 0 || fetching.current) {
+      playAt();
+      if (!clips.current[0]) setState("loading");
+      return;
     }
+    // 押した瞬間(await より前)に無音を再生しておく
+    el.src = silentWav();
+    void el.play().catch(() => {});
+    setState("loading");
+    waiting.current = true;
+    void load();
   }
 
+  const label =
+    state === "playing" ? "■ 止める" : state === "loading" ? "声を作っています…(押すと止めます)" : "▶ YUKI の声で聞く";
   return (
     <div className="row" style={{ gap: 8 }}>
-      <button type="button" className="secondary" onClick={toggle} disabled={state === "loading"}>
-        {state === "playing" ? "■ 止める" : state === "loading" ? "声を作っています…" : "▶ YUKI の声で聞く"}
+      <button type="button" className="secondary" onClick={toggle}>
+        {label}
       </button>
       {state === "error" && <span className="error" style={{ fontSize: 13 }}>{reason}</span>}
-      <audio
-        ref={audio}
-        // 無音の終わりでは何もしない(本物の音声が終わったときだけ「聞く」に戻す)
-        onEnded={(e) => {
-          if (url.current && e.currentTarget.src === url.current) setState("idle");
-        }}
-        preload="none"
-      />
+      <audio ref={audio} onEnded={(e) => onClipEnded(e.currentTarget.src)} onError={(e) => onClipEnded(e.currentTarget.src)} preload="none" />
     </div>
   );
 }
