@@ -6,8 +6,8 @@ import { computeSpeechCost, recordSpeechUsage, recordUsage } from "@/lib/usage";
 import { searchKnowledge } from "@/lib/knowledge/search";
 import { loadPersona } from "@/lib/persona";
 import { runVoiceReply } from "@/lib/agents/voice";
-import { synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
-import { SentenceSplitter, type VoiceEvent } from "@/lib/voice/sentences";
+import { pauseMsFor, synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
+import { SentenceSplitter, splitForSpeech, type VoiceEvent } from "@/lib/voice/sentences";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,15 +138,24 @@ export async function POST(req: Request) {
         const previousText = spoken;
         spoken += speakable;
         if (!speakable) return;
+        // 読点・句点ごとに声を作り、画面側で区切りのあとに無音(間)を挟む
+        const parts = splitForSpeech(speakable);
         speech = speech.then(async () => {
-          if (!open) return; // 聞く人がいない声は作らない(費用をかけない)
-          try {
-            const audio = Buffer.from(await synthesize(speakable, { previousText })).toString("base64");
-            ttsChars += speakable.length;
-            if (!("first_audio_ms" in timings)) mark("first_audio_ms");
-            send({ type: "audio", index: i, audio });
-          } catch (err) {
-            console.error(err);
+          let before = previousText;
+          for (let k = 0; k < parts.length; k++) {
+            if (!open) return; // 聞く人がいない声は作らない(費用をかけない)
+            const part = parts[k];
+            try {
+              const audio = Buffer.from(
+                await synthesize(part.text, { previousText: before, nextText: parts[k + 1]?.text }),
+              ).toString("base64");
+              ttsChars += part.text.length;
+              if (!("first_audio_ms" in timings)) mark("first_audio_ms");
+              send({ type: "audio", index: i, audio, pauseMs: pauseMsFor(part.pause) });
+            } catch (err) {
+              console.error(err);
+            }
+            before += part.text;
           }
         });
       };

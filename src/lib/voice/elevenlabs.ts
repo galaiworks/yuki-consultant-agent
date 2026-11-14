@@ -23,11 +23,11 @@ export async function transcribe(audio: Blob, filename: string): Promise<string>
 }
 
 /**
- * 文字を YUKI の声にする。previousText(直前に話した文)を渡すと、
- * 文ごとに分けて作っても前後のつながりが自然な抑揚になる。
+ * 文字を YUKI の声にする。previousText(直前に話した文)と nextText(このあと話す文)を渡すと、
+ * 区切りごとに分けて作っても前後のつながりが自然な抑揚になる。
  * 届き始めが速い stream 版の窓口を使う。
  */
-export async function synthesize(text: string, opts: { previousText?: string } = {}): Promise<ArrayBuffer> {
+export async function synthesize(text: string, opts: { previousText?: string; nextText?: string } = {}): Promise<ArrayBuffer> {
   const res = await fetch(
     `${API}/text-to-speech/${encodeURIComponent(appConfig.elevenLabsVoiceId)}/stream?output_format=${VOICE.outputFormat}`,
     {
@@ -38,6 +38,7 @@ export async function synthesize(text: string, opts: { previousText?: string } =
         language_code: VOICE.languageCode,
         text,
         ...(opts.previousText ? { previous_text: opts.previousText.slice(-500) } : {}),
+        ...(opts.nextText ? { next_text: opts.nextText.slice(0, 500) } : {}),
         voice_settings: VOICE.settings,
       }),
     },
@@ -61,4 +62,9 @@ export function toSpeakable(text: string): string {
     .replace(/\n{2,}/g, "\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
+}
+
+/** 区切りのあとに挟む無音の長さ(ミリ秒) */
+export function pauseMsFor(pause: "comma" | "period" | "none"): number {
+  return pause === "none" ? 0 : VOICE.pauseMs[pause];
 }

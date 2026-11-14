@@ -41,6 +41,52 @@ export class SentenceSplitter {
 export type VoiceEvent =
   | { type: "heard"; conversationId: string; userText: string }
   | { type: "text"; index: number; text: string }
-  | { type: "audio"; index: number; audio: string }
+  | { type: "audio"; index: number; audio: string; pauseMs: number }
   | { type: "done"; replyText: string; timings: Record<string, number> }
   | { type: "error"; error: string };
+
+/** 読み上げを区切る記号。読点のあとは短め、句点などのあとは長めに間を置く */
+const COMMA = /[、，]/;
+const PERIOD = /[。！？!?…\n]/;
+/** 句読点のすぐあとに付く閉じかっこ(「〜です。」の 」など)は前の区切りに含める */
+const CLOSER = /[」』）)】〉》"'”’]/;
+const DIGIT = /[0-9０-９]/;
+
+export type SpeechPart = { text: string; pause: "comma" | "period" | "none" };
+
+/**
+ * 声にする文を、読点・句点ごとの小さな区切りに分ける(テスト対象)。
+ * 区切りごとに声を作り、そのあいだに決まった長さの無音を挟むことで「間」をつくる。
+ * 読点で切ったときに短すぎる区切り(「はい、」など)は、次とまとめて不自然に途切れないようにする。
+ * 半角の「,」と、数字に挟まれた「，」「、」は桁区切りなので区切りにしない。
+ */
+export function splitForSpeech(text: string, minCommaChars = 8): SpeechPart[] {
+  const out: SpeechPart[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const isComma = COMMA.test(ch);
+    if (!isComma && !PERIOD.test(ch)) continue;
+    // 数字に挟まれた読点・カンマ(１，０００ など)は桁区切りなので切らない
+    if (isComma && DIGIT.test(text[i - 1] ?? "") && DIGIT.test(text[i + 1] ?? "")) continue;
+    let end = i;
+    let pause: SpeechPart["pause"] = isComma ? "comma" : "period";
+    // 記号が続くとき(「！？」「。」」など)は最後までを 1 つにする。句点が混じれば長い間にする
+    while (end + 1 < text.length && (COMMA.test(text[end + 1]) || PERIOD.test(text[end + 1]) || CLOSER.test(text[end + 1]))) {
+      end++;
+      if (PERIOD.test(text[end])) pause = "period";
+    }
+    const piece = text.slice(start, end + 1).trim();
+    i = end;
+    if (!piece) {
+      start = end + 1;
+      continue;
+    }
+    if (pause === "comma" && piece.length < minCommaChars) continue; // 短い読点区切りは次とまとめる
+    out.push({ text: piece, pause });
+    start = end + 1;
+  }
+  const rest = text.slice(start).trim();
+  if (rest) out.push({ text: rest, pause: "none" });
+  return out;
+}
