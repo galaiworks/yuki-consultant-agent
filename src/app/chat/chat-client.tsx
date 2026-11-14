@@ -1,11 +1,50 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 type Citation = { title: string; source: string; cited_text: string };
 export type InitialMessage = { id: string; role: "user" | "assistant"; text: string; citations: Citation[] };
 /** dbId は保存後の ID(評価ボタンで使う)。表示用の id は変えない */
 type Msg = InitialMessage & { pending?: boolean; dbId?: string };
+
+/** 回答の「**太字**」を太字で表示する(それ以外の記法はそのまま文字で出す) */
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*\n]+?\*\*)/g).map((part, i) =>
+    part.length > 4 && part.startsWith("**") && part.endsWith("**") ? (
+      <strong key={i}>{part.slice(2, -2)}</strong>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
+
+/** 出典の同一判定に使うキー。YouTube は動画 ID、ほかは URL そのもの */
+function citationKey(c: Citation): string {
+  try {
+    const u = new URL(c.source);
+    if (u.hostname === "youtu.be") return `yt:${u.pathname.slice(1)}`;
+    if (u.hostname === "youtube.com" || u.hostname.endsWith(".youtube.com")) {
+      // watch?v=ID・/embed/ID・/shorts/ID・/live/ID を同じ動画として扱う。動画 ID が取れなければ URL のまま
+      const id = u.searchParams.get("v") ?? u.pathname.match(/^\/(?:embed|shorts|live)\/([^/?#]+)/)?.[1];
+      return id ? `yt:${id}` : c.source;
+    }
+    // YouTube 以外は URL をそのまま使う(パラメータやハッシュで資料を見分けるサイトがあるため)
+    return c.source;
+  } catch {
+    return c.source || c.title;
+  }
+}
+
+/** 同じ動画を何か所も引用したときは、出典欄には 1 回だけ出す */
+function uniqueCitations(items: Citation[]): Citation[] {
+  const seen = new Set<string>();
+  return items.filter((c) => {
+    const key = citationKey(c);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 /** チャット画面。サーバーから 1 行 1 JSON のイベントを受け取って表示する */
 export function ChatClient(props: {
@@ -97,13 +136,13 @@ export function ChatClient(props: {
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.role}`}>
           <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
-          <div className="body">{m.text || (m.pending ? "考えています…" : "")}</div>
+          <div className="body">{m.text ? renderInline(m.text) : m.pending ? "考えています…" : ""}</div>
           {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
           {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
           {m.citations?.length > 0 && (
             <div className="cites">
               <span className="muted">出典</span>
-              {m.citations.map((c, i) =>
+              {uniqueCitations(m.citations).map((c, i) =>
                 c.source.startsWith("http") ? (
                   <a key={i} href={c.source} target="_blank" rel="noopener noreferrer">{c.title}</a>
                 ) : (
@@ -139,37 +178,103 @@ export function ChatClient(props: {
   );
 }
 
-/** YUKI の声で回答を聞く。一度作った音声はページを開いている間は使い回す */
+/** 無音の WAV(0.1 秒)。押した瞬間に再生して、あとで本物の音声を鳴らせるようにする */
+function silentWavUrl(): string {
+  const samples = 800; // 8kHz × 0.1 秒
+  const buf = new ArrayBuffer(44 + samples);
+  const v = new DataView(buf);
+  const text = (o: number, t: string) => [...t].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  text(0, "RIFF");
+  v.setUint32(4, 36 + samples, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); // モノラル
+  v.setUint32(24, 8000, true);
+  v.setUint32(28, 8000, true);
+  v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); // 8bit
+  text(36, "data");
+  v.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8bit の無音は 128
+  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+}
+
+/**
+ * YUKI の声で回答を聞く。一度作った音声はページを開いている間は使い回す。
+ * Safari は「押してから時間がたった再生」を自動再生として止めるため、
+ * 押した瞬間に無音を鳴らして <audio> を使える状態にしてから、届いた音声に差し替えて鳴らす。
+ */
 function Listen({ messageId }: { messageId: string }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
+  const [reason, setReason] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
   const url = useRef<string | null>(null);
+  // 音声を作っている間は、もう一度押しても 2 本目を頼まない(費用が二重にかかるため)
+  const busy = useRef(false);
+  // 画面から消えたら(別の相談に移ったら)、鳴らさない・止める・後始末する
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const el = audio.current;
+    return () => {
+      mounted.current = false;
+      el?.pause();
+      if (url.current) URL.revokeObjectURL(url.current);
+      url.current = null;
+    };
+  }, []);
 
   async function toggle() {
+    const el = audio.current;
+    if (!el || busy.current) return;
     if (state === "playing") {
-      audio.current?.pause();
+      el.pause();
       setState("idle");
       return;
     }
-    if (!audio.current) return;
+    setReason("");
     try {
       if (!url.current) {
+        busy.current = true;
         setState("loading");
-        // iPhone では、押した直後に再生を始めないと音が出ないことがあるので、先に鳴らす準備をしておく
-        void audio.current.play().catch(() => {});
-        const res = await fetch("/api/voice/speak", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ messageId }),
-        });
-        if (!res.ok) throw new Error();
-        url.current = URL.createObjectURL(await res.blob());
-        audio.current.src = url.current;
+        // 押した瞬間(await より前)に無音を再生しておく
+        const silent = silentWavUrl();
+        try {
+          el.src = silent;
+          void el.play().catch(() => {});
+          const res = await fetch("/api/voice/speak", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ messageId }),
+          });
+          if (!res.ok) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string };
+            throw new Error(j.error ?? "読み上げできませんでした。少し時間をおいてお試しください");
+          }
+          const blob = await res.blob();
+          if (!mounted.current) return;
+          url.current = URL.createObjectURL(blob);
+          el.src = url.current;
+        } finally {
+          URL.revokeObjectURL(silent);
+          busy.current = false;
+        }
       }
-      await audio.current.play();
-      setState("playing");
-    } catch {
+      if (!mounted.current) return;
+      await el.play();
+      if (mounted.current) setState("playing");
+    } catch (err) {
+      if (!mounted.current) return;
       setState("error");
+      setReason(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "ブラウザが再生を止めました。もう一度押してください"
+          : err instanceof Error && err.message
+            ? err.message
+            : "読み上げできませんでした",
+      );
     }
   }
 
@@ -178,8 +283,15 @@ function Listen({ messageId }: { messageId: string }) {
       <button type="button" className="secondary" onClick={toggle} disabled={state === "loading"}>
         {state === "playing" ? "■ 止める" : state === "loading" ? "声を作っています…" : "▶ YUKI の声で聞く"}
       </button>
-      {state === "error" && <span className="error" style={{ fontSize: 13 }}>読み上げできませんでした</span>}
-      <audio ref={audio} onEnded={() => setState("idle")} preload="none" />
+      {state === "error" && <span className="error" style={{ fontSize: 13 }}>{reason}</span>}
+      <audio
+        ref={audio}
+        // 無音の終わりでは何もしない(本物の音声が終わったときだけ「聞く」に戻す)
+        onEnded={(e) => {
+          if (url.current && e.currentTarget.src === url.current) setState("idle");
+        }}
+        preload="none"
+      />
     </div>
   );
 }
