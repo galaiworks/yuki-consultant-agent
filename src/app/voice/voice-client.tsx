@@ -149,10 +149,8 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const startedAt = useRef(0);
   const player = useRef<HTMLAudioElement | null>(null);
   const stopWatch = useRef<() => void>(() => {});
-  // 区切りごとに届く YUKI の声を、届いた順に 1 つずつ再生する。pauseMs は再生後に置く無音(間)
-  const queue = useRef<{ audio: string; pauseMs: number }[]>([]);
-  const pauseAfter = useRef(0);
-  const gapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 文ごとに届く YUKI の声を、届いた順に 1 つずつ再生する
+  const queue = useRef<string[]>([]);
   const playing = useRef(false);
   const replyDone = useRef(true);
   const sentAt = useRef(0);
@@ -171,26 +169,20 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       return;
     }
     playing.current = true;
-    pauseAfter.current = next.pauseMs;
     if (sentAt.current) {
       setWaitSec((Date.now() - sentAt.current) / 1000);
       sentAt.current = 0;
     }
     setPhase("speaking");
-    el.src = `data:audio/mpeg;base64,${next.audio}`;
+    el.src = `data:audio/mpeg;base64,${next}`;
     el.play().catch(() => advanceRef.current(id));
   }, []);
 
-  /** 再生 id の再生が終わった(または失敗した)ら、決まった間を置いて次の区切りへ進む。同じ id では 1 回だけ */
+  /** 再生 id の再生が終わった(または失敗した)ら、次の文へ進む。同じ id では 1 回だけ */
   const advance = useCallback(
     (id: number) => {
-      if (id !== attempt.current || !playing.current || gapTimer.current) return;
-      const wait = pauseAfter.current;
-      if (wait <= 0) return playNext();
-      gapTimer.current = setTimeout(() => {
-        gapTimer.current = null;
-        if (id === attempt.current) playNext();
-      }, wait);
+      if (id !== attempt.current || !playing.current) return;
+      playNext();
     },
     [playNext],
   );
@@ -222,7 +214,6 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
 
   useEffect(
     () => () => {
-      if (gapTimer.current) clearTimeout(gapTimer.current);
       stopWatch.current();
       recorder.current?.stream.getTracks().forEach((t) => t.stop());
     },
@@ -261,7 +252,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
           } else if (event.type === "text") {
             setLines((prev) => prev.map((l, i) => (i === yukiLine ? { ...l, text: l.text + event.text } : l)));
           } else if (event.type === "audio") {
-            queue.current.push({ audio: event.audio, pauseMs: event.pauseMs ?? 0 });
+            queue.current.push(event.audio);
             if (!playing.current) playNext();
           } else if (event.type === "error") {
             setError(event.error);

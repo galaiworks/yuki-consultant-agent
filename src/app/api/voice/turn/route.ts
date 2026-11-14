@@ -6,8 +6,8 @@ import { computeSpeechCost, recordSpeechUsage, recordUsage } from "@/lib/usage";
 import { searchKnowledge } from "@/lib/knowledge/search";
 import { loadPersona } from "@/lib/persona";
 import { runVoiceReply } from "@/lib/agents/voice";
-import { pauseMsFor, synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
-import { SentenceSplitter, splitForSpeech, type VoiceEvent } from "@/lib/voice/sentences";
+import { synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
+import { addThinkingPauses, bracketDepth, endsWithQuestion, SentenceSplitter, type VoiceEvent } from "@/lib/voice/sentences";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -130,6 +130,7 @@ export async function POST(req: Request) {
       let index = 0;
       let spoken = "";
       let ttsChars = 0;
+      let depth = 0;
       let speech: Promise<void> = Promise.resolve();
       const speak = (sentence: string) => {
         const i = index++;
@@ -138,26 +139,31 @@ export async function POST(req: Request) {
         const previousText = spoken;
         spoken += speakable;
         if (!speakable) return;
-        // 読点・句点ごとに声を作り、画面側で区切りのあとに無音(間)を挟む
-        const parts = splitForSpeech(speakable);
+        // 問いのあとに話が続くときだけ、声の中に間([pause])を入れる
+        const withPauses = addThinkingPauses(speakable, depth);
+        depth = bracketDepth(speakable, depth); // かっこが文をまたぐときのため、深さを次の文へ持ち越す
         speech = speech.then(async () => {
-          let before = previousText;
-          for (let k = 0; k < parts.length; k++) {
-            if (!open) return; // 聞く人がいない声は作らない(費用をかけない)
-            const part = parts[k];
-            try {
-              const audio = Buffer.from(
-                await synthesize(part.text, { previousText: before, nextText: parts[k + 1]?.text }),
-              ).toString("base64");
-              ttsChars += part.text.length;
-              if (!("first_audio_ms" in timings)) mark("first_audio_ms");
-              send({ type: "audio", index: i, audio, pauseMs: pauseMsFor(part.pause) });
-            } catch (err) {
-              console.error(err);
-            }
-            before += part.text;
+          if (!open) return; // 聞く人がいない声は作らない(費用をかけない)
+          try {
+            const audio = Buffer.from(await synthesize(withPauses, { previousText })).toString("base64");
+            ttsChars += withPauses.length;
+            if (!("first_audio_ms" in timings)) mark("first_audio_ms");
+            send({ type: "audio", index: i, audio });
+          } catch (err) {
+            console.error(err);
           }
         });
+      };
+      // 問いで終わる文は、次の文と一緒に声にする(あいだに間を入れるため)。最後の問いはそのまま声にする
+      let held: string | null = null;
+      const say = (sentence: string) => {
+        const joined = `${held ?? ""}${sentence}`;
+        if (endsWithQuestion(sentence)) {
+          held = joined; // 問いが続くときも、問いでない文が来るまでまとめておく
+        } else {
+          held = null;
+          speak(joined);
+        }
       };
 
       // 2) 文字 → YUKI の返事
@@ -174,12 +180,13 @@ export async function POST(req: Request) {
             if (!("first_token_ms" in timings)) mark("first_token_ms");
             for (const sentence of splitter.push(delta)) {
               if (!("first_sentence_ms" in timings)) mark("first_sentence_ms");
-              speak(sentence);
+              say(sentence);
             }
           },
         });
         const rest = splitter.flush();
-        if (rest) speak(rest);
+        if (rest) say(rest);
+        if (held !== null) speak(held);
         mark("reply_ms");
       } catch (err) {
         console.error(err);
