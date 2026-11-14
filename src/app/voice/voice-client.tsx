@@ -23,22 +23,34 @@ const SILENCE_MS = 1200;
 const MAX_RECORD_MS = 90_000;
 /** これより大きい音を「話している」とみなす(0〜1 の音量) */
 const VOICE_LEVEL = 0.02;
+/**
+ * 「マイクに音がまったく届いていない」とみなす境目(瞬間の最大の振れ幅)。
+ * 自動停止の境目よりずっと小さくし、小声でも捨てないようにする。ミュートのマイクはほぼ 0 になる
+ */
+const ANY_SOUND_PEAK = 0.004;
 
 /**
  * 録音中の音量を見て、話し終わって少し黙ったら onSilence を呼ぶ。
  * 一度も話し声が聞こえないうちは止めない。止めるための関数を返す。
  * ブラウザが音量を取れないとき(古い iPhone など)は何もしない(ボタンで止められる)。
  */
-function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
+function watchSilence(
+  stream: MediaStream,
+  onSilence: () => void,
+  onLevel: (level: number) => void,
+  onSound: () => void,
+  onMeasured: () => void,
+): (() => void) | null {
   let ctx: AudioContext;
   let analyser: AnalyserNode;
   try {
     ctx = new AudioContext();
     analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
+    analyser.fftSize = 2048;
     ctx.createMediaStreamSource(stream).connect(analyser);
   } catch {
-    return () => {};
+    // 音量が取れないブラウザでは null を返す(声が聞こえたかは判断しない)
+    return null;
   }
   void ctx.resume().catch(() => {});
   const data = new Float32Array(analyser.fftSize);
@@ -46,16 +58,31 @@ function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
   let heard = false;
   let lastVoice = Date.now();
   const timer = setInterval(() => {
+    // 録音の上限は、音量を測れるかどうかに関係なく守る
+    if (Date.now() - started > MAX_RECORD_MS) {
+      stop();
+      onSilence();
+      return;
+    }
+    // 音を処理できる状態のときだけ「測れた」と数える(Safari などで止まったままなら判断しない)
+    if (ctx.state !== "running") return;
     analyser.getFloatTimeDomainData(data);
     let sum = 0;
-    for (const v of data) sum += v * v;
+    let peak = 0;
+    for (const v of data) {
+      sum += v * v;
+      peak = Math.max(peak, Math.abs(v));
+    }
     const level = Math.sqrt(sum / data.length);
+    onMeasured();
+    onLevel(level);
+    if (peak > ANY_SOUND_PEAK) onSound();
     const now = Date.now();
     if (level > VOICE_LEVEL) {
       heard = true;
       lastVoice = now;
     }
-    if ((heard && now - lastVoice > SILENCE_MS) || now - started > MAX_RECORD_MS) {
+    if (heard && now - lastVoice > SILENCE_MS) {
       stop();
       onSilence();
     }
@@ -65,6 +92,37 @@ function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
     void ctx.close().catch(() => {});
   }
   return stop;
+}
+
+/** 選んだマイクをこの端末に覚えておく(読み書きできない環境でも動くようにする) */
+const MIC_KEY = "yuki.voice.micId";
+function loadMicId(): string {
+  try {
+    return window.localStorage.getItem(MIC_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function saveMicId(id: string) {
+  try {
+    if (id) window.localStorage.setItem(MIC_KEY, id);
+    else window.localStorage.removeItem(MIC_KEY);
+  } catch {
+    // 保存できなくても、このページを開いている間は選んだマイクを使う
+  }
+}
+
+/** 選んだマイクで録音を始める。そのマイクが無くなっていたら、既定のマイクに戻す */
+async function openMic(micId: string): Promise<{ stream: MediaStream; fellBack: boolean }> {
+  if (micId) {
+    try {
+      return { stream: await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: micId } } }), fellBack: false };
+    } catch (e) {
+      const name = e instanceof DOMException ? e.name : "";
+      if (name !== "OverconstrainedError" && name !== "NotFoundError") throw e;
+    }
+  }
+  return { stream: await navigator.mediaDevices.getUserMedia({ audio: true }), fellBack: Boolean(micId) };
 }
 
 const LABEL: Record<Phase, string> = {
@@ -78,6 +136,13 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [lines, setLines] = useState<Line[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // マイクの一覧と、選んでいるマイク(空 = ブラウザの既定)
+  const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+  const [micId, setMicId] = useState("");
+  const [level, setLevel] = useState(0);
+  // 録音中にマイクの音を測れたか・何か音が届いたか。測れなかったときは無音と決めつけない
+  const measured = useRef(false);
+  const sound = useRef(false);
   const conversationId = useRef<string | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
@@ -123,6 +188,29 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   );
   const advanceRef = useRef(advance);
   advanceRef.current = advance;
+
+  /** つながっているマイクの一覧を読み直す(名前は、マイクの使用を許可したあとで表示される) */
+  const refreshMics = useCallback(async () => {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      setMics(all.filter((d) => d.kind === "audioinput" && d.deviceId));
+    } catch {
+      setMics([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    setMicId(loadMicId());
+    void refreshMics();
+    // マイクを抜き差ししたら一覧を更新する
+    navigator.mediaDevices?.addEventListener?.("devicechange", refreshMics);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", refreshMics);
+  }, [refreshMics]);
+
+  function chooseMic(id: string) {
+    setMicId(id);
+    saveMicId(id);
+  }
 
   useEffect(
     () => () => {
@@ -206,7 +294,13 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         player.current.src = SILENT_WAV;
         void player.current.play().catch(() => {});
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { stream, fellBack } = await openMic(micId);
+      if (fellBack) {
+        chooseMic("");
+        setError("選んでいたマイクが見つからないため、既定のマイクで録音します");
+      }
+      // 許可が出るとマイクの名前が読めるようになるので、一覧を読み直す
+      void refreshMics();
       const mime = pickMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       chunks.current = [];
@@ -214,6 +308,13 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       rec.onstop = () => {
         stopWatch.current();
         stream.getTracks().forEach((t) => t.stop());
+        setLevel(0);
+        // 一度も声が聞こえなかったら送らない(無音を文字起こしすると、費用だけかかって何も返らない)
+        if (measured.current && !sound.current) {
+          setError("マイクに音が届いていません。「マイク」で、使っているマイクを選んでからもう一度お話しください");
+          setPhase("idle");
+          return;
+        }
         const blob = new Blob(chunks.current, { type: rec.mimeType || mime || "audio/webm" });
         void send(blob, (Date.now() - startedAt.current) / 1000);
       };
@@ -221,15 +322,28 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       rec.start();
       startedAt.current = Date.now();
       // 話し終わって少し黙ったら、ボタンを押さなくても送る
-      stopWatch.current = watchSilence(stream, () => {
-        if (rec.state === "recording") rec.stop();
-      });
+      measured.current = false;
+      sound.current = false;
+      const stopper = watchSilence(
+        stream,
+        () => {
+          if (rec.state === "recording") rec.stop();
+        },
+        setLevel,
+        () => {
+          sound.current = true;
+        },
+        () => {
+          measured.current = true;
+        },
+      );
+      stopWatch.current = stopper ?? (() => {});
       setPhase("recording");
     } catch {
       setError("マイクを使えませんでした。ブラウザでマイクの使用を許可してください");
       setPhase("idle");
     }
-  }, [phase, send]);
+  }, [phase, send, micId, refreshMics]);
 
   return (
     <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -244,6 +358,40 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         </button>
         <span className="muted" aria-live="polite">{LABEL[phase]}</span>
       </div>
+      <label htmlFor="mic" style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", fontWeight: 400 }}>
+        <span className="muted">マイク</span>
+        <select
+          id="mic"
+          value={micId}
+          onChange={(e) => chooseMic(e.target.value)}
+          disabled={phase !== "idle"}
+          style={{ font: "inherit", padding: "6px 8px", maxWidth: "100%" }}
+        >
+          <option value="">ブラウザの既定のマイク</option>
+          {/* 許可前などで一覧に出ていなくても、前回選んだマイクを表示して実際の設定と合わせる */}
+          {micId && !mics.some((m) => m.deviceId === micId) && <option value={micId}>前回選んだマイク</option>}
+          {mics.map((m, i) => (
+            <option key={m.deviceId} value={m.deviceId}>
+              {m.label || `マイク ${i + 1}`}
+            </option>
+          ))}
+        </select>
+        {mics.length > 0 && mics.every((m) => !m.label) && (
+          <span className="muted" style={{ fontSize: 12 }}>一度「話す」を押してマイクを許可すると、名前が表示されます</span>
+        )}
+      </label>
+      {phase === "recording" && (
+        <div aria-label="マイクの音量" style={{ height: 6, background: "var(--line)", borderRadius: 3, overflow: "hidden" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${Math.min(100, Math.round((level / 0.15) * 100))}%`,
+              background: "var(--accent)",
+              transition: "width 80ms linear",
+            }}
+          />
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       {waitSec !== null && (
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
