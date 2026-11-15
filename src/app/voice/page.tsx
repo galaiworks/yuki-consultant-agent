@@ -16,9 +16,21 @@ export default async function VoicePage() {
   if (!access.allowed && access.reason === "no_subscription") redirect("/redeem");
 
   return (
-    <main className="shell">
+    <main className="shell voice-page">
       <Nav />
-      <h1>YUKI と声で話す</h1>
+      <header className="voice-heading">
+        <span className="eyebrow">Voice session</span>
+        <h1>YUKI と声で話す</h1>
+      </header>
+      <div className="voice-stage">
+        <div className="voice-orb">
+          <span className="voice-ring" aria-hidden="true" />
+          <span className="voice-ring" aria-hidden="true" />
+          <span className="voice-ring" aria-hidden="true" />
+          <img src="/yuki/portrait.jpg" alt="YUKI" width={900} height={900} />
+        </div>
+        <p className="voice-caption">Take a moment to think.</p>
+      </div>
       {!appConfig.voiceEnabled && <p className="notice">音声の会話は準備中です。もうしばらくお待ちください。</p>}
       {!access.allowed && <p className="error">今月の利用上限に達しました。来月またはプラン変更後にご利用ください。</p>}
       <VoiceClient disabled={!access.allowed || !appConfig.voiceEnabled} />
