@@ -69,41 +69,46 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="shell" style={{ maxWidth: 480 }}>
-      <h1>YUKI Consultant Agent</h1>
-      <p className="muted">クライアント限定の AI 経営相談です。担当者からお知らせしたメールアドレスでログインしてください。</p>
-      <form className="card" onSubmit={onSubmit}>
-        <label htmlFor="email">
-          メールアドレス
-          <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        {mode === "password" && (
-          <label htmlFor="password">
-            パスワード
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+    <main className="shell login-shell">
+      <div className="login-hero">
+        <img className="login-portrait" src="/yuki/portrait.jpg" alt="YUKI" width={900} height={900} fetchPriority="high" />
+      </div>
+      <section className="login-content" aria-labelledby="login-title">
+        <h1 className="login-brand" id="login-title">YUKI<small className="brand-kicker">AI CONSULTANT · LOS ANGELES</small></h1>
+        <p className="muted login-intro">クライアント限定の AI 経営相談です。担当者からお知らせしたメールアドレスでログインしてください。</p>
+        <form className="card login-form" onSubmit={onSubmit}>
+          <label className="login-field" htmlFor="email">
+            <span className="field-label"><span lang="en">Email</span> メールアドレス</span>
+            <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </label>
-        )}
-        <button type="submit" disabled={state === "sending"}>
-          {state === "sending" ? "確認中…" : mode === "password" ? "ログイン" : "ログインリンクを送る"}
-        </button>
-        {state === "sent" && <p>ログイン用のリンクを送りました。いちばん新しいメールのリンクを開いてください(どのブラウザ・端末で開いても使えます)。</p>}
-        {state === "error" && <p className="error">{message}</p>}
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => switchMode(mode === "password" ? "link" : "password")}
-        >
-          {mode === "password" ? "メールのリンクでログインする" : "パスワードでログインする"}
-        </button>
-      </form>
-      <p className="notice">このサービスの YUKI は、本人の動画と考え方をもとに作られた AI です(本人公認)。</p>
+          {mode === "password" && (
+            <label className="login-field" htmlFor="password">
+              <span className="field-label"><span lang="en">Password</span> パスワード</span>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+          )}
+          <button className="login-submit" type="submit" disabled={state === "sending"}>
+            {state === "sending" ? "確認中…" : mode === "password" ? "ログイン" : "ログインリンクを送る"}
+          </button>
+          {state === "sent" && <p>ログイン用のリンクを送りました。いちばん新しいメールのリンクを開いてください(どのブラウザ・端末で開いても使えます)。</p>}
+          {state === "error" && <p className="error">{message}</p>}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => switchMode(mode === "password" ? "link" : "password")}
+          >
+            {mode === "password" ? "メールのリンクでログインする" : "パスワードでログインする"}
+          </button>
+        </form>
+        <p className="notice login-notice">このサービスの YUKI は、本人の動画と考え方をもとに作られた AI です(本人公認)。</p>
+      </section>
     </main>
   );
 }

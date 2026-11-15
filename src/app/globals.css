@@ -1,81 +1,193 @@
-/* 落ち着いた「相談室」の配色。藍色を軸に、紙の白と墨の黒 */
+/* A案の黒とゴールド。OS の表示設定によらず、常に暗い相談室にする。 */
 :root {
-  --bg: #f4f6f8;
-  --surface: #ffffff;
-  --ink: #17212c;
-  --muted: #5b6977;
-  --line: #d8dfe6;
-  --accent: #1f4f8f;
-  --accent-ink: #ffffff;
-  --accent-soft: #e4ecf6;
-  --danger: #b4412f;
-  --font-body: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
-  --font-display: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f151c;
-    --surface: #161e27;
-    --ink: #e4eaf0;
-    --muted: #9aa8b6;
-    --line: #2a3644;
-    --accent: #7fb0ec;
-    --accent-ink: #0f151c;
-    --accent-soft: #1b2a3c;
-    --danger: #ec8a77;
-    color-scheme: dark;
-  }
+  color-scheme: dark;
+  --bg: #0a0a0b; --surface: #141416; --surface2: #1b1b1e;
+  --ink: #f3efe6; --muted: #9b968b; --line: rgba(201,169,97,.22);
+  --gold: #c9a961; --gold-hi: #ecd49b; --gold-lo: #8a7340;
+  --accent: var(--gold); --accent-ink: #17140d; --accent-soft: rgba(201,169,97,.14);
+  --danger: #ef9d8f;
+  --serif: "Cormorant Garamond", "Times New Roman", serif;
+  --sans: "Inter", "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  --font-body: var(--sans); --font-display: var(--sans);
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.75; }
-a { color: var(--accent); }
-h1, h2, h3 { font-family: var(--font-display); line-height: 1.4; text-wrap: balance; margin: 0; }
-.shell { max-width: 880px; margin: 0 auto; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 20px; }
-.nav { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-.nav .brand { font-family: var(--font-display); font-weight: 700; margin-right: auto; color: var(--ink); text-decoration: none; }
-.nav a { text-decoration: none; }
-.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-.muted { color: var(--muted); }
-.notice { border-left: 3px solid var(--accent); padding: 4px 0 4px 12px; color: var(--muted); font-size: 13px; }
-.error { color: var(--danger); }
-label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; }
-input, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
-textarea { resize: vertical; min-height: 72px; }
-input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-button { font: inherit; font-weight: 700; border: none; border-radius: 4px; padding: 10px 18px; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+html { min-height: 100%; scroll-padding-bottom: 110px; }
+body { min-height: 100vh; margin: 0; background: radial-gradient(1200px 600px at 50% -10%, #1a1712 0%, var(--bg) 60%); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.8; -webkit-font-smoothing: antialiased; }
+a { color: var(--gold); text-underline-offset: 4px; overflow-wrap: anywhere; }
+a:hover { color: var(--gold-hi); }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 500; line-height: 1.5; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(23px,3vw,30px); }
+h2 { font-size: 20px; }
+h3 { font-size: 17px; }
+p { margin: 0; overflow-wrap: anywhere; }
+img { max-width: 100%; }
+form, section, .row > *, .grid2 > *, .stats > * { min-width: 0; }
+.shell { width: 100%; max-width: 960px; margin: 0 auto; padding: 28px max(24px,env(safe-area-inset-right,0px)) 48px max(24px,env(safe-area-inset-left,0px)); display: flex; flex-direction: column; gap: 24px; }
+.eyebrow { font-size: 10px; letter-spacing: .28em; text-transform: uppercase; color: var(--gold); }
+.muted, .status { color: var(--muted); }
+.status { font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ブランドとメニュー。スマホでは下部タブに切り替える。 */
+.nav { display: flex; flex-direction: column; gap: 20px; border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.nav-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.nav .brand { display: inline-flex; align-items: center; gap: 13px; color: var(--ink); text-decoration: none; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; box-shadow: 0 0 0 1.5px var(--bg),0 0 0 2.5px var(--gold); }
+.brand-copy { display: flex; flex-direction: column; line-height: 1.25; }
+.brand-copy strong { font-family: var(--serif); font-size: 28px; font-weight: 600; letter-spacing: .05em; }
+.brand-copy small { font-size: 9px; letter-spacing: .2em; color: var(--gold); }
+.nav-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.nav-tab { display: flex; flex: 1; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 7px 10px; border-radius: 999px; text-decoration: none; color: var(--muted); white-space: nowrap; }
+.nav-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.nav-tab small { font-size: 11px; }
+.nav-icon { font-size: 16px; line-height: 1; }
+.nav-tab:hover { background: var(--accent-soft); color: var(--gold-hi); }
+.nav-menu { position: relative; flex: none; }
+.nav-menu summary { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 50%; color: var(--gold); cursor: pointer; list-style: none; font-size: 24px; line-height: 1; }
+.nav-menu summary::-webkit-details-marker { display: none; }
+.nav-menu-panel { position: absolute; top: calc(100% + 12px); right: 0; z-index: 40; width: 220px; max-width: calc(100vw - 32px); padding: 16px; display: flex; flex-direction: column; gap: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 16px 40px #0008; }
+.nav-menu-panel a { text-decoration: none; }
+.nav-menu-panel button { width: 100%; }
+/* 現在ページの表示だけを CSS で補い、状態管理を追加しない。 */
+body:has(.chat-page) .nav-tab[href="/chat"], body:has(.voice-page) .nav-tab[href="/voice"] { color: var(--gold-hi); background: var(--accent-soft); }
+
+/* 共通カードとフォーム。本文と注意文に見本の明るい補助色を使う。 */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 14px; }
+.notice { border-left: 2px solid var(--gold-lo); padding: 4px 0 4px 14px; color: var(--muted); font-size: 13px; line-height: 1.9; }
+.error { color: var(--danger); overflow-wrap: anywhere; }
+label { display: flex; flex-direction: column; gap: 8px; font-weight: 500; }
+input, textarea, select { max-width: 100%; min-width: 0; font: inherit; color: var(--ink); background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+textarea { width: 100%; resize: vertical; min-height: 100px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 4px; }
+/* 金の最暗色は線だけに使い、ボタン文字のコントラストを確保する。 */
+button { font: inherit; font-weight: 600; border: 1px solid transparent; border-radius: 999px; padding: 11px 22px; background: linear-gradient(135deg,var(--gold-hi),var(--gold)); color: var(--accent-ink); cursor: pointer; line-height: 1.6; }
+button:hover:not(:disabled) { filter: brightness(1.08); }
 button[disabled] { opacity: .5; cursor: default; }
-button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-.chat { display: flex; flex-direction: column; gap: 14px; }
-.msg { display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
-.msg .who { font-size: 12px; color: var(--muted); }
-.msg .body { white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.user .body { background: var(--accent-soft); padding: 10px 14px; border-radius: 6px; }
-.status { font-size: 13px; color: var(--muted); }
-.cites { font-size: 13px; display: flex; flex-direction: column; gap: 4px; border-top: 1px dashed var(--line); padding-top: 8px; }
-.composer { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 8px; }
+button.secondary { background: transparent; color: var(--gold); border: 1px solid var(--line); }
+button.secondary[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--gold); color: var(--gold-hi); }
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-.pill.ok { border-color: var(--accent); color: var(--accent); }
-.convs { display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.pill { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; }
+.pill.ok { border-color: var(--gold-lo); color: var(--gold-hi); }
+.convs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+.convs > a:first-child { border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; text-decoration: none; }
 pre.doc { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-body); margin: 0; }
-
-select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
-.stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-.table-wrap { overflow-x: auto; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,160px),1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 4px; }
+.stat strong { font-family: var(--serif); font-size: 32px; font-weight: 600; color: var(--gold-hi); font-variant-numeric: tabular-nums; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 16px; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-weight: 700; white-space: nowrap; }
+th, td { text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 500; color: var(--gold); white-space: nowrap; }
+td { overflow-wrap: anywhere; }
 td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.row-detail { border-top: 1px solid var(--line); padding: 10px 0; display: flex; flex-direction: column; gap: 8px; }
-.row-detail summary { cursor: pointer; }
-.feedback { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
-.feedback button { padding: 2px 10px; font-size: 13px; }
+.row-detail { border-top: 1px solid var(--line); padding: 14px 0; display: flex; flex-direction: column; gap: 10px; }
+.row-detail summary { cursor: pointer; color: var(--gold-hi); overflow-wrap: anywhere; }
 
-.site-footer { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 24px 16px 32px; font-size: 12px; color: var(--muted); }
+/* 写真が上半分を満たし、黒いフォームへ溶け込むログイン画面。 */
+.login-shell { position: relative; isolation: isolate; max-width: 480px; min-height: 880px; padding: 0; gap: 0; }
+.login-hero { position: absolute; inset: 0 0 auto; height: 530px; z-index: -1; overflow: hidden; }
+.login-portrait { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
+.login-hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg,rgba(10,10,11,.15),rgba(10,10,11,.2) 40%,var(--bg) 96%); }
+.login-content { padding: 350px 32px 32px; display: flex; flex-direction: column; gap: 20px; }
+.login-brand { font-family: var(--serif); font-size: 64px; font-weight: 500; line-height: 1; letter-spacing: .06em; }
+.brand-kicker { display: block; font-family: var(--sans); font-size: 10px; font-weight: 500; line-height: 1.8; letter-spacing: .3em; color: var(--gold); margin-top: 12px; }
+.login-intro { font-size: 13px; color: var(--muted); line-height: 1.9; }
+.card.login-form { background: transparent; border: 0; padding: 0; border-radius: 0; gap: 20px; }
+.field-label { font-size: 12px; color: var(--muted); font-weight: 400; }
+.field-label > span { color: var(--gold); margin-right: 8px; }
+.login-field { gap: 2px; }
+.login-field input { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 9px 0; }
+.login-submit { min-height: 50px; letter-spacing: .04em; }
+.login-form > .secondary { font-size: 12px; }
+.login-notice { font-size: 11px; text-align: center; border: 0; padding: 0; }
+
+/* 相談者には淡い金、YUKI の回答には写真と黒い吹き出しを添える。 */
+.chat { display: flex; flex-direction: column; gap: 24px; }
+.chat-welcome { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 30px 12px 40px; text-align: center; }
+.welcome-portrait { width: 136px; height: 136px; border-radius: 50%; object-fit: cover; object-position: center 20%; padding: 5px; border: 1px solid var(--gold-lo); box-shadow: 0 16px 50px #c9a96112; }
+.chat-welcome h2 { font-size: clamp(18px,3vw,23px); }
+.chat-welcome p { max-width: 480px; font-size: 13px; }
+.msg { display: flex; gap: 12px; align-items: flex-start; max-width: 100%; min-width: 0; }
+.message-avatar { width: 30px; height: 30px; margin-top: 27px; }
+.message-content { display: flex; flex-direction: column; gap: 9px; min-width: 0; flex: 1; }
+.msg .who { font-size: 10px; color: var(--muted); letter-spacing: .08em; }
+.msg .body { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px 18px; line-height: 1.95; }
+.msg.assistant .body { background: var(--surface); border: 1px solid #232220; border-radius: 4px 18px 18px 18px; }
+.msg.assistant .body strong { color: var(--gold-hi); font-weight: 600; }
+.msg.user { align-self: flex-end; max-width: 82%; }
+.msg.user .who { text-align: right; }
+.msg.user .body { background: linear-gradient(135deg,rgba(201,169,97,.22),rgba(201,169,97,.1)); border: 1px solid rgba(201,169,97,.35); border-radius: 18px 18px 4px 18px; }
+.cites { font-size: 11px; display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px; }
+.cites > .muted { flex-basis: 100%; }
+.cites > a, .cites > span:not(.muted) { max-width: 100%; color: var(--gold); border: 1px solid var(--line); border-radius: 16px; padding: 3px 10px; text-decoration: none; }
+.message-content > .row button, .feedback button { padding: 5px 10px; font-size: 12px; }
+.feedback { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.composer { position: sticky; z-index: 10; bottom: 0; background: var(--bg); padding: 14px 0 max(12px,env(safe-area-inset-bottom,0px)); display: grid; grid-template-columns: minmax(0,1fr) 48px; gap: 6px 10px; align-items: end; border-top: 1px solid var(--line); }
+.composer label { grid-column: 1; font-size: 12px; }
+.composer textarea { min-height: 60px; max-height: 240px; border-radius: 24px; background: var(--surface); font-size: 14px; padding: 16px; }
+.composer-actions { display: contents; }
+.composer .send-button { grid-column: 2; grid-row: 1; width: 48px; height: 48px; padding: 0; margin-bottom: 6px; display: grid; place-items: center; border-radius: 50%; }
+.composer-actions > .muted { grid-column: 1 / -1; }
+
+/* 音声の処理は既存のまま、写真の波紋と大きなマイクを CSS で描く。 */
+.voice-page { gap: 20px; }
+.voice-heading { text-align: center; display: flex; flex-direction: column; gap: 6px; }
+.voice-heading h1 { font-size: 21px; }
+.voice-stage { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 0; }
+.voice-orb { position: relative; width: 210px; height: 210px; display: grid; place-items: center; }
+.voice-orb img { width: 164px; height: 164px; border-radius: 50%; object-fit: cover; object-position: center 20%; box-shadow: 0 0 0 1px var(--gold),0 20px 60px rgba(201,169,97,.18); }
+.voice-ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--gold); opacity: 0; animation: voice-pulse 3s ease-out infinite; }
+.voice-ring:nth-child(2) { animation-delay: 1s; }
+.voice-ring:nth-child(3) { animation-delay: 2s; }
+@keyframes voice-pulse { from { transform: scale(.78); opacity: .7; } to { transform: scale(1.18); opacity: 0; } }
+.voice-caption { font-family: var(--serif); font-style: italic; font-size: 19px; color: var(--muted); }
+.voice-page > .card { background: transparent; border: 0; padding: 12px 0; }
+.voice-page > .card > div:first-child { flex-direction: column; justify-content: center; padding-bottom: 12px; }
+.voice-page button[aria-pressed] { position: relative; width: 88px; height: 88px; padding: 49px 3px 10px; border-radius: 50%; font-size: 12px; box-shadow: 0 0 0 6px rgba(201,169,97,.12),0 0 0 14px rgba(201,169,97,.05); }
+.voice-page button[aria-pressed]::before { content: ""; position: absolute; left: calc(50% - 5px); top: 17px; width: 10px; height: 20px; border: 2px solid currentColor; border-radius: 8px; }
+.voice-page button[aria-pressed]::after { content: ""; position: absolute; left: calc(50% - 10px); top: 27px; width: 20px; height: 16px; border: 2px solid currentColor; border-top: 0; border-radius: 0 0 12px 12px; }
+.voice-page button[aria-pressed="true"] { outline: 2px solid var(--gold-hi); outline-offset: 8px; }
+.voice-page label[for="mic"] { justify-content: center; font-size: 13px; }
+.voice-page .card > div > p:has(> strong) { padding: 12px 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); overflow-wrap: anywhere; }
+.voice-page .card > div > p:has(> strong):not(.muted) { position: relative; padding-left: 54px; }
+.voice-page .card > div > p:has(> strong):not(.muted)::before { content: ""; position: absolute; left: 12px; top: 14px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--gold); background: url("/yuki/avatar.jpg") center / cover; }
+.voice-page .card > div > p:has(> strong):not(.muted) strong { color: var(--gold-hi); }
+
+.site-footer { display: flex; flex-wrap: wrap; gap: 10px 20px; justify-content: center; padding: 24px 20px 40px; font-size: 11px; color: var(--muted); }
 .site-footer a { color: var(--muted); }
 .legal h2 { font-size: 17px; margin: 12px 0 0; }
 .legal ol, .legal ul { margin: 0; padding-left: 1.4em; }
+@media (min-width: 768px) {
+  .login-shell { margin-top: 40px; border: 1px solid var(--line); border-radius: 24px; overflow: hidden; background: var(--bg); }
+  .login-hero { z-index: 0; }
+  .login-content { position: relative; z-index: 1; }
+}
+@media (max-width: 767px) {
+  .shell { padding: 20px max(16px,env(safe-area-inset-right,0px)) 24px max(16px,env(safe-area-inset-left,0px)); gap: 20px; }
+  .nav { gap: 0; padding-bottom: 16px; }
+  .brand-copy strong { font-size: 24px; }
+  .nav-tabs { position: fixed; z-index: 30; inset: auto 0 0; flex-wrap: nowrap; gap: 0; padding: 10px max(8px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-left,0px)); border-top: 1px solid var(--line); background: rgba(10,10,11,.96); }
+  .nav-tab { flex-direction: column; gap: 3px; min-width: 0; padding: 4px 2px; border-radius: 12px; line-height: 1.25; }
+  .nav-label { font-size: 9px; letter-spacing: .1em; }
+  .nav-tab small { font-size: 9px; }
+  .nav-icon { font-size: 17px; margin-bottom: 2px; }
+  .card { padding: 18px; }
+  .msg { gap: 10px; }
+  .msg .body { padding: 12px 14px; font-size: 14px; }
+  .msg.user { max-width: 88%; }
+  .composer { bottom: calc(84px + env(safe-area-inset-bottom,0px)); padding-bottom: 10px; }
+  body:has(.nav-tabs) .site-footer { padding-bottom: calc(120px + env(safe-area-inset-bottom,0px)); }
+  .login-shell { padding: 0; gap: 0; min-height: 100svh; }
+  .login-hero { height: 470px; }
+  .login-content { padding: 300px 28px 28px; }
+  .login-brand { font-size: 56px; }
+  .chat-welcome { padding: 20px 0 30px; }
+  .chat-welcome .eyebrow { font-size: 9px; letter-spacing: .16em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-ring { animation: none; opacity: .2; }
+  .voice-ring:nth-child(2), .voice-ring:nth-child(3) { display: none; }
+  .voice-page .card [aria-label="マイクの音量"] > div { transition: none !important; }
+}

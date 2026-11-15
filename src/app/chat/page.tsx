@@ -34,7 +34,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   }
 
   return (
-    <main className="shell">
+    <main className="shell chat-page">
       <Nav />
       <div className="convs">
         <Link href="/chat">+ 新しい相談</Link>

@@ -129,29 +129,34 @@ export function ChatClient(props: {
   return (
     <section className="chat" aria-live="polite">
       {messages.length === 0 && (
-        <div className="card">
+        <div className="chat-welcome">
+          <img className="welcome-portrait" src="/yuki/portrait.jpg" alt="YUKI" width={900} height={900} />
+          <span className="eyebrow">Your next level starts here</span>
           <h2>どんなことでご相談しますか</h2>
           <p className="muted">例:「インスタを毎日投稿しているのに、半年たってもフォロワーが増えません。続けるべきですか?」</p>
         </div>
       )}
       {messages.map((m) => (
         <div key={m.id} className={`msg ${m.role}`}>
-          <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
-          <div className="body">{m.text ? renderInline(m.role === "assistant" ? breakLongParagraphs(m.text) : m.text) : m.pending ? "考えています…" : ""}</div>
-          {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
-          {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
-          {m.citations?.length > 0 && (
-            <div className="cites">
-              <span className="muted">出典</span>
-              {uniqueCitations(m.citations).map((c, i) =>
-                c.source.startsWith("http") ? (
-                  <a key={i} href={c.source} target="_blank" rel="noopener noreferrer">{c.title}</a>
-                ) : (
-                  <span key={i}>{c.title}</span>
-                ),
-              )}
-            </div>
-          )}
+          {m.role === "assistant" && <img className="avatar message-avatar" src="/yuki/avatar.jpg" alt="" width={256} height={256} />}
+          <div className="message-content">
+            <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
+            <div className="body">{m.text ? renderInline(m.role === "assistant" ? breakLongParagraphs(m.text) : m.text) : m.pending ? "考えています…" : ""}</div>
+            {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
+            {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
+            {m.citations?.length > 0 && (
+              <div className="cites">
+                <span className="muted">出典</span>
+                {uniqueCitations(m.citations).map((c, i) =>
+                  c.source.startsWith("http") ? (
+                    <a key={i} href={c.source} target="_blank" rel="noopener noreferrer">{c.title}</a>
+                  ) : (
+                    <span key={i}>{c.title}</span>
+                  ),
+                )}
+              </div>
+            )}
+          </div>
         </div>
       ))}
       {status && <p className="status">{status}</p>}
@@ -170,8 +175,11 @@ export function ChatClient(props: {
             placeholder="状況と、決めたいことを書いてください"
           />
         </label>
-        <div className="row">
-          <button type="submit" disabled={busy || props.disabled || !input.trim()}>{busy ? "回答中…" : "送信"}</button>
+        <div className="row composer-actions">
+          <button className="send-button" type="submit" disabled={busy || props.disabled || !input.trim()}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+            <span className="sr-only">{busy ? "回答中…" : "送信"}</span>
+          </button>
           <span className="muted" style={{ fontSize: 12 }}>Ctrl / ⌘ + Enter でも送信できます</span>
         </div>
       </form>
