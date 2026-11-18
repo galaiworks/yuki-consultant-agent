@@ -228,6 +228,17 @@ body:has(.session-page) {
 .speech-controls button { font-size: 12px; padding: 5px 12px; }
 .speech-toggle { flex-direction: row; align-items: center; font-weight: 400; gap: 7px; }
 .speech-toggle input { accent-color: var(--gold); }
+/* 音声 ON/OFF のスイッチ */
+.speech-switch { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 6px; color: var(--text, inherit); font-size: 13px; font-weight: 700; cursor: pointer; }
+.speech-switch:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.speech-switch-track { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--line); transition: background .2s; flex: none; }
+.speech-switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #f3efe6; transition: transform .2s; }
+.speech-switch.on { border-color: var(--gold); }
+.speech-switch.on .speech-switch-track { background: var(--gold); }
+.speech-switch.on .speech-switch-knob { transform: translateX(16px); }
+.speech-switch-hint { font-size: 11px; font-weight: 400; }
+@media (max-width: 420px) { .speech-switch-hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .speech-switch-track, .speech-switch-knob { transition: none; } }
 .session-main > .notice { flex: none; font-size: 10px; line-height: 1.5; padding: 2px 0 2px 9px; }
 .voice-controls { flex: none; border-top: 1px solid var(--line); padding: 12px 4px 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .voice-controls > div:first-child { justify-content: center; }

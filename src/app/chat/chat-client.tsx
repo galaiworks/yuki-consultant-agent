@@ -66,17 +66,24 @@ export function ChatClient(props: {
   const [listen, setListen] = useState(true);
   const [stopKey, setStopKey] = useState(0);
   const speech = useSpeechPlayer();
+  // 返事の途中で切り替えても効くように、最新の ON/OFF を参照で持つ
+  const listenRef = useRef(true);
   const updateSession = useUpdateSession();
   const request = useRef<AbortController | null>(null);
   const conversationId = useRef<string | null>(props.conversationId);
   useEffect(() => {
-    try { setListen(localStorage.getItem("yuki.chat.speak") !== "off"); } catch { /* 保存できない端末では初期値を使う */ }
+    try {
+      const saved = localStorage.getItem("yuki.chat.speak") !== "off";
+      setListen(saved);
+      listenRef.current = saved;
+    } catch { /* 保存できない端末では初期値を使う */ }
     return () => request.current?.abort();
   }, []);
 
   /** 読み上げの好みはこの端末にだけ保存する */
   function chooseListen(value: boolean) {
     setListen(value);
+    listenRef.current = value;
     try { localStorage.setItem("yuki.chat.speak", value ? "on" : "off"); } catch { /* この画面では選択を維持する */ }
     if (!value) speech.stop();
   }
@@ -139,7 +146,7 @@ export function ChatClient(props: {
           } else if (ev.type === "status") {
             setStatus(`${ev.label}…`);
           } else if (ev.type === "audio") {
-            speech.enqueue(ev.audio);
+            if (listenRef.current) speech.enqueue(ev.audio);
           } else if (ev.type === "speech_error") {
             setSpeechError(ev.message);
           } else if (ev.type === "citations") {
@@ -202,7 +209,23 @@ export function ChatClient(props: {
       {error && <p className="error">{error}</p>}
       </ConversationLog>
       <div className="speech-controls row">
-        {props.voiceEnabled && <label className="speech-toggle"><input type="checkbox" checked={listen} onChange={(e) => chooseListen(e.target.checked)} />声で聞く</label>}
+        {props.voiceEnabled && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={listen}
+            aria-label="返事を YUKI の声でも読み上げる"
+            className={`speech-switch${listen ? " on" : ""}`}
+            onClick={() => {
+              if (listen) speech.stop();
+              chooseListen(!listen);
+            }}
+          >
+            <span className="speech-switch-track" aria-hidden="true"><span className="speech-switch-knob" /></span>
+            <span>音声 {listen ? "ON" : "OFF"}</span>
+            <span className="muted speech-switch-hint">{listen ? "文字と同時に声で読み上げます" : "文字だけで表示します"}</span>
+          </button>
+        )}
         {speech.isPlaying && <button type="button" className="secondary" onClick={speech.stop}>■ 読み上げを止める</button>}
         {(speechError || speech.error) && <p className="error" role="status">{speechError || speech.error}</p>}
       </div>
