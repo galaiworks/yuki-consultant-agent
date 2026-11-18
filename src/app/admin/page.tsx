@@ -5,6 +5,8 @@ import { CreateClientForm, CreatePassForm, ResetPasswordButton } from "@/app/adm
 import { approveDeliverableAction } from "@/app/admin/actions";
 import { KnowledgeImport } from "@/app/admin/knowledge-import";
 import { EvalRunner } from "@/app/admin/eval-runner";
+import { InsightsPanel } from "@/app/admin/insights";
+import { listInsightTopics } from "@/lib/insights/topics";
 
 const STATUS_LABEL: Record<string, string> = {
   queued: "受付済み",
@@ -38,6 +40,7 @@ async function fetchMonthlyUsage(admin: AdminClient, since: Date) {
 
 export default async function AdminPage() {
   const { admin } = await requireAdmin();
+  const insightTopics = await listInsightTopics(admin).then((topics) => ({ topics, unavailable: false }), () => ({ topics: [], unavailable: true }));
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -188,6 +191,7 @@ export default async function AdminPage() {
       )}
       <KnowledgeImport />
       <EvalRunner />
+      <InsightsPanel {...insightTopics} />
 
       <div className="grid2">
         <CreateClientForm siteUrl={appConfig.siteUrl} />

@@ -102,6 +102,14 @@ export async function signUpWithPass(_prev: SignupState, form: FormData): Promis
     if (v.name) {
       await admin.from("profiles").update({ display_name: v.name }).eq("id", userId);
     }
+    if (form.get("insightsConsent") === "on") {
+      // 登録完了後、本人の RLS で明示された同意だけを保存する。日時は DB が設定する。
+      const consent = await supabase.from("profiles").update({ insights_consent: true }).eq("id", userId)
+        .select("insights_consent").single();
+      if (consent.error || consent.data?.insights_consent !== true) {
+        return { error: "登録は完了しましたが、相談の傾向の同意設定を保存できませんでした。同意しない状態です。ログイン後、アカウント画面で設定してください。" };
+      }
+    }
   } catch (e) {
     if (!redeemed) {
       await undo();

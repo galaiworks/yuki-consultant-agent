@@ -79,15 +79,18 @@ export async function recordUsage(
   agent: string,
   model: string,
   usage: UsageLike,
+  options?: { signal?: AbortSignal; required?: boolean },
 ): Promise<void> {
   const rec = computeUsage(model, usage);
-  const { error } = await admin.from("usage_logs").insert({
+  const request = admin.from("usage_logs").insert({
     user_id: ctx.userId,
     conversation_id: ctx.conversationId ?? null,
     deliverable_id: ctx.deliverableId ?? null,
     agent,
     ...rec,
   });
+  const { error } = await (options?.signal ? request.abortSignal(options.signal) : request);
+  if (error && options?.required) throw new Error("usage_record_failed");
   // 記録失敗で相談そのものは止めないが、必ずログに残す
   if (error) console.error("usage_logs への記録に失敗", error.message);
 }
