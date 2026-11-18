@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/admin/guard";
 import { generateTempPassword } from "@/lib/admin/temp-password";
-import { generatePassCode, hashPassCode } from "@/lib/access";
+import { generatePassCode, hashPassCode, parseCustomPassCode } from "@/lib/access";
 
 export type ActionResult = { ok?: string; secret?: string; error?: string };
 
@@ -81,15 +81,27 @@ export async function createPassAction(_prev: ActionResult, form: FormData): Pro
     label: form.get("label") || undefined,
   });
   if (!parsed.success) return { error: "入力内容を確認してください。" };
-  const code = generatePassCode();
+  // コードの指定があればそれを使う(覚えやすいコードを本人に伝えたいとき)。なければ自動で作る
+  const requested = String(form.get("code") ?? "").trim();
+  let code = generatePassCode();
+  if (requested) {
+    const custom = parseCustomPassCode(requested);
+    if (!custom) return { error: "コードは英数字 6〜32 文字にしてください(ハイフンは数えません)。" };
+    code = requested.toUpperCase();
+  }
+  // 指定コード(覚えやすく短い)は、引き換えの期限を発行日から「利用できる日数」までにする(いつまでも使えるのを防ぐ)
+  const expiresAt = requested ? new Date(Date.now() + parsed.data.days * 86_400_000).toISOString() : null;
   const { error } = await admin.from("access_passes").insert({
     code_hash: hashPassCode(code),
+    expires_at: expiresAt,
     plan_id: parsed.data.plan,
     duration_days: parsed.data.days,
     max_redemptions: parsed.data.uses,
     label: parsed.data.label ?? null,
   });
-  if (error) return { error: `発行できませんでした: ${error.message}` };
+  if (error) {
+    return { error: error.message.includes("duplicate") ? "そのコードはすでに使われています。別のコードにしてください。" : `発行できませんでした: ${error.message}` };
+  }
   revalidatePath("/admin");
   return { ok: "チケットを発行しました。コードは再表示できません。", secret: code };
 }

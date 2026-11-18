@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { hashPassCode, REDEEM_ERRORS } from "@/lib/access";
+import { hashPassCode, REDEEM_ERRORS, slowDownAfterBadCode } from "@/lib/access";
 import { appConfig } from "@/lib/config";
 import { isReservedEmail, parseSignup, passProblem } from "@/lib/signup";
 
@@ -36,7 +36,10 @@ export async function signUpWithPass(_prev: SignupState, form: FormData): Promis
     .eq("code_hash", codeHash)
     .maybeSingle();
   const problem = passProblem(pass, new Date());
-  if (problem) return { error: REDEEM_ERRORS[problem] ?? FAILED };
+  if (problem) {
+    await slowDownAfterBadCode();
+    return { error: REDEEM_ERRORS[problem] ?? FAILED };
+  }
 
   const { data: created, error: cErr } = await admin.auth.admin.createUser({
     email: v.email,
