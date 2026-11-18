@@ -40,6 +40,7 @@ export class SentenceSplitter {
 /** /api/voice/turn が 1 行 1 JSON で順に送るイベント */
 export type VoiceEvent =
   | { type: "heard"; conversationId: string; userText: string }
+  | { type: "status"; label: string }
   | { type: "text"; index: number; text: string }
   | { type: "audio"; index: number; audio: string }
   | { type: "done"; replyText: string; timings: Record<string, number> }
