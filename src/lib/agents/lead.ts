@@ -24,6 +24,8 @@ export type Citation = { title: string; source: string; cited_text: string };
 /** 画面に流すイベント(1 行 1 JSON で送る) */
 export type ChatEvent =
   | { type: "text"; text: string }
+  | { type: "audio"; index: number; audio: string }
+  | { type: "speech_error"; message: string }
   | { type: "status"; label: string }
   | { type: "citations"; items: Citation[] }
   | { type: "deliverable"; id: string }

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VoiceEvent } from "@/lib/voice/sentences";
+import type { InitialMessage } from "@/app/chat/chat-client";
+import { ConversationLog, ThinkingText, useUpdateSession } from "@/app/components/session-workspace";
 
-type Line = { who: "you" | "yuki"; text: string };
+type Line = { id: string; who: "you" | "yuki"; text: string; pending?: boolean };
 
 /** 0.1 秒の無音。iPhone で音を鳴らせる状態にするために、ボタンを押したときに一度だけ再生する */
 const SILENT_WAV = "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
@@ -132,9 +134,11 @@ const LABEL: Record<Phase, string> = {
   speaking: "YUKI が話しています",
 };
 
-export function VoiceClient({ disabled }: { disabled: boolean }) {
+/** 指定の会話を引き継ぎ、録音と返答の表示・再生を行う */
+export function VoiceClient({ disabled, conversationId: initialConversationId, initial }: { disabled: boolean; conversationId: string | null; initial: InitialMessage[] }) {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<Line[]>(initial.map((m) => ({ id: m.id, who: m.role === "user" ? "you" : "yuki", text: m.text })));
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   // マイクの一覧と、選んでいるマイク(空 = ブラウザの既定)
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
@@ -143,7 +147,11 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   // 録音中にマイクの音を測れたか・何か音が届いたか。測れなかったときは無音と決めつけない
   const measured = useRef(false);
   const sound = useRef(false);
-  const conversationId = useRef<string | null>(null);
+  const conversationId = useRef<string | null>(initialConversationId);
+  const updateSession = useUpdateSession();
+  const request = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  const stopped = useRef(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const startedAt = useRef(0);
@@ -213,9 +221,20 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
   }
 
   useEffect(
-    () => () => {
-      stopWatch.current();
-      recorder.current?.stream.getTracks().forEach((t) => t.stop());
+    () => {
+      mounted.current = true;
+      const el = player.current;
+      return () => {
+        mounted.current = false;
+        request.current?.abort();
+        stopWatch.current();
+        if (recorder.current) recorder.current.onstop = null;
+        if (recorder.current?.state === "recording") recorder.current.stop();
+        recorder.current?.stream.getTracks().forEach((t) => t.stop());
+        queue.current = [];
+        attempt.current++;
+        el?.pause();
+      };
     },
     [],
   );
@@ -224,15 +243,23 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
     async (blob: Blob, durationSec: number) => {
       setPhase("thinking");
       setWaitSec(null);
+      setStatus("");
+      stopped.current = false;
       sentAt.current = Date.now();
       queue.current = [];
       replyDone.current = false;
+      const userLine = crypto.randomUUID();
+      const yukiLine = crypto.randomUUID();
+      setLines((prev) => [...prev, { id: userLine, who: "you", text: "音声を文字にしています…" }, { id: yukiLine, who: "yuki", text: "", pending: true }]);
+      const abort = new AbortController();
+      request.current = abort;
+      let title = initial.find((m) => m.role === "user")?.text ?? "声の相談";
       const form = new FormData();
       form.append("audio", blob, "voice");
       form.append("durationSec", String(Math.round(durationSec)));
       if (conversationId.current) form.append("conversationId", conversationId.current);
       try {
-        const res = await fetch("/api/voice/turn", { method: "POST", body: form });
+        const res = await fetch("/api/voice/turn", { method: "POST", body: form, signal: abort.signal });
         if (!res.ok || !res.body) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(data.error ?? "うまくいきませんでした");
@@ -241,19 +268,23 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
-        let yukiLine = -1;
         const handle = (event: VoiceEvent) => {
           if (event.type === "heard") {
+            if (!conversationId.current) window.history.replaceState(null, "", `/voice?c=${event.conversationId}`);
             conversationId.current = event.conversationId;
-            setLines((prev) => {
-              yukiLine = prev.length + 1;
-              return [...prev, { who: "you", text: event.userText }, { who: "yuki", text: "" }];
-            });
+            if (!initial.length) title = event.userText;
+            updateSession({ id: event.conversationId, title: `(声)${title.slice(0, 36)}`, updated_at: new Date().toISOString() });
+            setLines((prev) => prev.map((l) => l.id === userLine ? { ...l, text: event.userText } : l));
           } else if (event.type === "text") {
-            setLines((prev) => prev.map((l, i) => (i === yukiLine ? { ...l, text: l.text + event.text } : l)));
+            setLines((prev) => prev.map((l) => (l.id === yukiLine ? { ...l, text: l.text + event.text } : l)));
+          } else if (event.type === "status") {
+            setStatus(event.label);
           } else if (event.type === "audio") {
+            if (stopped.current) return;
             queue.current.push(event.audio);
             if (!playing.current) playNext();
+          } else if (event.type === "done") {
+            setLines((prev) => prev.map((l) => l.id === yukiLine ? { ...l, text: event.replyText, pending: false } : l));
           } else if (event.type === "error") {
             setError(event.error);
           }
@@ -270,13 +301,16 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
           }
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        if (!abort.signal.aborted) setError(e instanceof Error ? e.message : String(e));
       } finally {
+        if (abort.signal.aborted) return;
+        setLines((prev) => prev.map((l) => l.id === yukiLine ? { ...l, pending: false } : l));
+        if (conversationId.current) updateSession({ id: conversationId.current, title: `(声)${title.slice(0, 36)}`, updated_at: new Date().toISOString() });
         replyDone.current = true;
         if (!playing.current) setPhase("idle");
       }
     },
-    [playNext],
+    [playNext, initial, updateSession],
   );
 
   const toggle = useCallback(async () => {
@@ -286,7 +320,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       if (recorder.current?.state === "recording") recorder.current.stop();
       return;
     }
-    if (phase !== "idle") return;
+    if (phase !== "idle" || disabled) return;
     try {
       // iPhone では、ボタンを押した瞬間に一度音を鳴らしておかないと、あとで再生できない。
       // 終わるのを待つと録音の開始が止まることがあるので、待たずに先へ進む
@@ -295,6 +329,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         void player.current.play().catch(() => {});
       }
       const { stream, fellBack } = await openMic(micId);
+      if (!mounted.current) { stream.getTracks().forEach((t) => t.stop()); return; }
       if (fellBack) {
         chooseMic("");
         setError("選んでいたマイクが見つからないため、既定のマイクで録音します");
@@ -343,10 +378,28 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       setError("マイクを使えませんでした。ブラウザでマイクの使用を許可してください");
       setPhase("idle");
     }
-  }, [phase, send, micId, refreshMics]);
+  }, [phase, send, micId, refreshMics, disabled]);
 
   return (
-    <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <section className="voice-client session-client">
+      <ConversationLog>
+        {lines.length === 0 && <div className="voice-stage">
+          <div className="voice-orb">
+            <span className="voice-ring" aria-hidden="true" /><span className="voice-ring" aria-hidden="true" /><span className="voice-ring" aria-hidden="true" />
+            <img src="/yuki/portrait.jpg" alt="YUKI" width={900} height={900} />
+          </div>
+          <p className="voice-caption">Take a moment to think.</p>
+        </div>}
+        {lines.map((l) => <div key={l.id} className={`msg ${l.who === "yuki" ? "assistant" : "user"}`}>
+          {l.who === "yuki" && <img className="avatar message-avatar" src="/yuki/avatar.jpg" alt="" width={256} height={256} />}
+          <div className="message-content"><span className="who">{l.who === "yuki" ? "YUKI(AI)" : "あなた"}</span>
+            <div className="body">{l.text || (l.pending ? <ThinkingText status={status} /> : "返事を受け取れませんでした。もう一度お試しください。")}</div>
+          </div>
+        </div>)}
+        {error && <p className="error" role="alert">{error}</p>}
+        {waitSec !== null && <p className="muted" style={{ fontSize: 13 }}>話し終わってから YUKI の声が出るまで: {waitSec.toFixed(1)} 秒</p>}
+      </ConversationLog>
+      <div className="voice-controls">
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <button
           type="button"
@@ -358,6 +411,14 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
         </button>
         <span className="muted" aria-live="polite">{LABEL[phase]}</span>
       </div>
+      {(phase === "speaking" || phase === "thinking") && <button type="button" className="secondary" onClick={() => {
+        stopped.current = true;
+        queue.current = [];
+        attempt.current++;
+        playing.current = false;
+        player.current?.pause();
+        if (replyDone.current) setPhase("idle");
+      }}>■ 読み上げを止める</button>}
       <label htmlFor="mic" style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", fontWeight: 400 }}>
         <span className="muted">マイク</span>
         <select
@@ -392,21 +453,6 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
           />
         </div>
       )}
-      {error && <p className="error">{error}</p>}
-      {waitSec !== null && (
-        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-          話し終わってから YUKI の声が出るまで: {waitSec.toFixed(1)} 秒
-        </p>
-      )}
-      {lines.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {lines.map((l, i) => (
-            <p key={i} className={l.who === "yuki" ? "" : "muted"} style={{ margin: 0 }}>
-              <strong>{l.who === "yuki" ? "YUKI(AI)" : "あなた"}:</strong> {l.text}
-            </p>
-          ))}
-        </div>
-      )}
       <audio
         ref={player}
         onEnded={() => advance(attempt.current)}
@@ -416,6 +462,7 @@ export function VoiceClient({ disabled }: { disabled: boolean }) {
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>
         1 回に話すのは 1 分くらいまでがおすすめです。会話は文字の相談と同じく履歴に残ります。
       </p>
+      </div>
     </section>
   );
 }

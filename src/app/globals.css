@@ -191,3 +191,88 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .voice-ring:nth-child(2), .voice-ring:nth-child(3) { display: none; }
   .voice-page .card [aria-label="マイクの音量"] > div { transition: none !important; }
 }
+
+/* 会話画面は表示可能な高さに収め、履歴とログだけを独立してスクロールさせる。 */
+body:has(.session-page) {
+  position: fixed; top: var(--session-top,0px); left: 0; width: 100%;
+  height: var(--session-height,100dvh); min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.shell.session-page { flex: 1; min-height: 0; max-width: 1280px; gap: 10px; padding-top: max(12px,env(safe-area-inset-top,0px)); padding-bottom: 0; }
+.session-page > .nav { flex: none; gap: 8px; padding-bottom: 10px; }
+.session-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 24px; }
+.session-main { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.session-toolbar { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 12px; font-size: 12px; }
+.session-sidebar, .session-drawer { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+.session-sidebar { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.session-sidebar h2, .session-drawer h2 { font-size: 14px; color: var(--gold-hi); }
+.new-session { display: block; padding: 8px 12px; border: 1px solid var(--gold-lo); border-radius: 20px; font-size: 13px; text-decoration: none; text-align: center; }
+.session-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 4px; font-size: 12px; }
+.session-link { flex: none; display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid transparent; border-radius: 10px; text-decoration: none; color: var(--ink); }
+.session-link > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.session-link time { color: var(--muted); font-size: 11px; }
+.session-link[aria-current="page"] { background: var(--accent-soft); border-color: var(--gold-lo); color: var(--gold-hi); }
+.voice-mark { color: var(--gold); }
+.drawer-open { display: none; }
+.session-drawer { color: var(--ink); width: min(320px,90vw); max-height: 100%; height: 100%; margin: 0 auto 0 0; border-radius: 0 16px 16px 0; }
+.session-drawer[open] { display: flex; flex-direction: column; gap: 14px; }
+.session-drawer::backdrop { background: #000b; }
+.drawer-close { align-self: flex-end; }
+.session-client { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.conversation-log { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; overflow-anchor: none; padding: 6px; }
+.conversation-log-content { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.session-client .composer { flex: none; position: static; padding: 8px 2px 0; }
+.session-client .composer textarea { height: 64px; min-height: 48px; max-height: min(160px,24dvh); }
+.speech-controls { flex: none; font-size: 12px; }
+.speech-controls:empty { display: none; }
+.speech-controls button { font-size: 12px; padding: 5px 12px; }
+.speech-toggle { flex-direction: row; align-items: center; font-weight: 400; gap: 7px; }
+.speech-toggle input { accent-color: var(--gold); }
+.session-main > .notice { flex: none; font-size: 10px; line-height: 1.5; padding: 2px 0 2px 9px; }
+.voice-controls { flex: none; border-top: 1px solid var(--line); padding: 12px 4px 0; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.voice-controls > div:first-child { justify-content: center; }
+.voice-controls > div:first-child > .muted { flex: 1; font-size: 12px; min-width: 140px; }
+.voice-controls label { font-size: 12px; }
+.voice-controls select { padding: 4px 8px !important; }
+.voice-controls > p { font-size: 11px !important; }
+.voice-controls [aria-label="マイクの音量"] { width: 100%; }
+.session-page .voice-heading h1 { font-size: 16px; }
+.session-page .voice-heading .eyebrow { display: none; }
+.session-page .voice-stage { padding: 24px 0; }
+.thinking-text { display: inline-flex; align-items: center; gap: 12px; color: var(--muted); }
+.typing-dots { display: inline-flex; gap: 4px; flex: none; }
+.typing-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--gold); animation: typing 1.2s ease-in-out infinite; }
+.typing-dots i:nth-child(2) { animation-delay: .2s; }
+.typing-dots i:nth-child(3) { animation-delay: .4s; }
+@keyframes typing { 0%,80%,100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+body:has(.session-page) .site-footer { flex: none; padding: 5px 16px max(5px,env(safe-area-inset-bottom,0px)); font-size: 10px; line-height: 1.5; }
+@media (max-width: 767px) {
+  .session-workspace { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .session-sidebar { display: none; }
+  .drawer-open { display: block; padding: 5px 12px; font-size: 12px; }
+  .session-toolbar { justify-content: space-between; }
+  .session-page .nav-tabs { position: absolute; }
+  body:has(.session-page) .site-footer { padding-bottom: calc(84px + env(safe-area-inset-bottom,0px)); }
+  .session-page .nav { padding-bottom: 8px; }
+  .session-page .brand .avatar { width: 30px; height: 30px; }
+  .session-page .brand-copy strong { font-size: 22px; }
+  .session-page .nav-menu summary { width: 32px; height: 32px; }
+  .session-page .composer-actions > .muted { display: none; }
+  /* Safari の入力時の自動ズームを防ぎ、表示可能な幅を保つ。 */
+  .session-client .composer textarea { font-size: 16px; }
+  .session-page .voice-controls button[aria-pressed] { width: 72px; height: 72px; padding-top: 44px; }
+  .session-page .voice-controls { padding-top: 8px; gap: 6px; }
+}
+@media (max-height: 550px) {
+  .session-page .nav-head .brand-copy small { display: none; }
+  .session-page .composer textarea { height: 48px; padding: 10px 14px; }
+  .session-page .voice-heading { display: none; }
+  .session-page .voice-controls > p { display: none; }
+  .session-page .voice-controls button[aria-pressed] { width: 60px; height: 60px; padding-top: 34px; }
+  .session-page .voice-controls button[aria-pressed]::before { top: 8px; }
+  .session-page .voice-controls button[aria-pressed]::after { top: 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; } }
+/* iOS はキーボード表示で CSS の media query の高さが変わらないため、visualViewport の判定を使う。 */
+body[data-session-keyboard="true"] .session-page .nav-tabs { display: none; }
+body[data-session-keyboard="true"] .site-footer { padding-bottom: 5px; }

@@ -2,6 +2,9 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { breakLongParagraphs } from "@/lib/text/wrap";
+import type { ChatEvent } from "@/lib/agents/lead";
+import { ConversationLog, ThinkingText, useUpdateSession } from "@/app/components/session-workspace";
+import { silentWavUrl, useSpeechPlayer } from "@/app/components/use-speech-player";
 
 type Citation = { title: string; source: string; cited_text: string };
 export type InitialMessage = { id: string; role: "user" | "assistant"; text: string; citations: Citation[] };
@@ -59,14 +62,36 @@ export function ChatClient(props: {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [speechError, setSpeechError] = useState("");
+  const [listen, setListen] = useState(true);
+  const [stopKey, setStopKey] = useState(0);
+  const speech = useSpeechPlayer();
+  const updateSession = useUpdateSession();
+  const request = useRef<AbortController | null>(null);
   const conversationId = useRef<string | null>(props.conversationId);
+  useEffect(() => {
+    try { setListen(localStorage.getItem("yuki.chat.speak") !== "off"); } catch { /* 保存できない端末では初期値を使う */ }
+    return () => request.current?.abort();
+  }, []);
+
+  /** 読み上げの好みはこの端末にだけ保存する */
+  function chooseListen(value: boolean) {
+    setListen(value);
+    try { localStorage.setItem("yuki.chat.speak", value ? "on" : "off"); } catch { /* この画面では選択を維持する */ }
+    if (!value) speech.stop();
+  }
 
   async function send(e?: { preventDefault(): void }) {
     e?.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || props.disabled) return;
+    setStopKey((key) => key + 1);
+    if (listen && props.voiceEnabled) speech.begin();
+    else speech.stop();
     setInput("");
     setError("");
+    setStatus("");
+    setSpeechError("");
     setBusy(true);
     const assistantId = crypto.randomUUID();
     setMessages((m) => [
@@ -75,12 +100,18 @@ export function ChatClient(props: {
       { id: assistantId, role: "assistant", text: "", citations: [], pending: true },
     ]);
     const patch = (fn: (m: Msg) => Msg) => setMessages((all) => all.map((m) => (m.id === assistantId ? fn(m) : m)));
+    const abort = new AbortController();
+    request.current = abort;
+    const refreshSession = () => {
+      if (conversationId.current) updateSession({ id: conversationId.current, title: (props.initial.find((m) => m.role === "user")?.text ?? text).slice(0, 40), updated_at: new Date().toISOString() });
+    };
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId: conversationId.current, message: text }),
+        body: JSON.stringify({ conversationId: conversationId.current, message: text, speak: listen && props.voiceEnabled }),
+        signal: abort.signal,
       });
       if (!res.ok || !res.body) {
         const j = await res.json().catch(() => ({}));
@@ -97,15 +128,20 @@ export function ChatClient(props: {
         buf = lines.pop() ?? "";
         for (const line of lines) {
           if (!line) continue;
-          const ev = JSON.parse(line);
+          const ev = JSON.parse(line) as ChatEvent;
           if (ev.type === "conversation") {
             if (!conversationId.current) window.history.replaceState(null, "", `/chat?c=${ev.id}`);
             conversationId.current = ev.id;
+            refreshSession();
           } else if (ev.type === "text") {
             setStatus("");
             patch((m) => ({ ...m, text: m.text + ev.text }));
           } else if (ev.type === "status") {
             setStatus(`${ev.label}…`);
+          } else if (ev.type === "audio") {
+            speech.enqueue(ev.audio);
+          } else if (ev.type === "speech_error") {
+            setSpeechError(ev.message);
           } else if (ev.type === "citations") {
             patch((m) => ({ ...m, citations: ev.items }));
           } else if (ev.type === "saved") {
@@ -118,16 +154,19 @@ export function ChatClient(props: {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "送信できませんでした");
+      if (!abort.signal.aborted) setError(err instanceof Error ? err.message : "送信できませんでした");
     } finally {
+      if (abort.signal.aborted) return;
       patch((m) => ({ ...m, pending: false }));
+      refreshSession();
       setBusy(false);
       setStatus((s) => (s.startsWith("成果物") ? s : ""));
     }
   }
 
   return (
-    <section className="chat" aria-live="polite">
+    <section className="chat session-client">
+      <ConversationLog>
       {messages.length === 0 && (
         <div className="chat-welcome">
           <img className="welcome-portrait" src="/yuki/portrait.jpg" alt="YUKI" width={900} height={900} />
@@ -141,8 +180,8 @@ export function ChatClient(props: {
           {m.role === "assistant" && <img className="avatar message-avatar" src="/yuki/avatar.jpg" alt="" width={256} height={256} />}
           <div className="message-content">
             <span className="who">{m.role === "user" ? "あなた" : "YUKI(AI)"}</span>
-            <div className="body">{m.text ? renderInline(m.role === "assistant" ? breakLongParagraphs(m.text) : m.text) : m.pending ? "考えています…" : ""}</div>
-            {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} />}
+            <div className="body">{m.text ? renderInline(m.role === "assistant" ? breakLongParagraphs(m.text) : m.text) : m.pending ? <ThinkingText status={status} /> : "返事を受け取れませんでした。もう一度お試しください。"}</div>
+            {m.role === "assistant" && !m.pending && m.dbId && m.text && props.voiceEnabled && <Listen messageId={m.dbId} stopKey={stopKey} onPlay={speech.stop} />}
             {m.role === "assistant" && !m.pending && m.dbId && m.text && <Feedback messageId={m.dbId} />}
             {m.citations?.length > 0 && (
               <div className="cites">
@@ -159,8 +198,14 @@ export function ChatClient(props: {
           </div>
         </div>
       ))}
-      {status && <p className="status">{status}</p>}
+      {status.startsWith("成果物") && <p className="status">{status}</p>}
       {error && <p className="error">{error}</p>}
+      </ConversationLog>
+      <div className="speech-controls row">
+        {props.voiceEnabled && <label className="speech-toggle"><input type="checkbox" checked={listen} onChange={(e) => chooseListen(e.target.checked)} />声で聞く</label>}
+        {speech.isPlaying && <button type="button" className="secondary" onClick={speech.stop}>■ 読み上げを止める</button>}
+        {(speechError || speech.error) && <p className="error" role="status">{speechError || speech.error}</p>}
+      </div>
       <form className="composer" onSubmit={send}>
         <label htmlFor="message" className="muted" style={{ fontWeight: 400 }}>
           相談内容
@@ -183,31 +228,9 @@ export function ChatClient(props: {
           <span className="muted" style={{ fontSize: 12 }}>Ctrl / ⌘ + Enter でも送信できます</span>
         </div>
       </form>
+      <audio ref={speech.audio} preload="none" />
     </section>
   );
-}
-
-/** 無音の WAV(0.1 秒)。押した瞬間に再生して、あとで本物の音声を鳴らせるようにする */
-function silentWavUrl(): string {
-  const samples = 800; // 8kHz × 0.1 秒
-  const buf = new ArrayBuffer(44 + samples);
-  const v = new DataView(buf);
-  const text = (o: number, t: string) => [...t].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
-  text(0, "RIFF");
-  v.setUint32(4, 36 + samples, true);
-  text(8, "WAVE");
-  text(12, "fmt ");
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true); // PCM
-  v.setUint16(22, 1, true); // モノラル
-  v.setUint32(24, 8000, true);
-  v.setUint32(28, 8000, true);
-  v.setUint16(32, 1, true);
-  v.setUint16(34, 8, true); // 8bit
-  text(36, "data");
-  v.setUint32(40, samples, true);
-  for (let i = 0; i < samples; i++) v.setUint8(44 + i, 128); // 8bit の無音は 128
-  return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
 }
 
 /**
@@ -215,7 +238,7 @@ function silentWavUrl(): string {
  * Safari は「押してから時間がたった再生」を自動再生として止めるため、
  * 押した瞬間に無音を鳴らして <audio> を使える状態にしてから、届いた音声に差し替えて鳴らす。
  */
-function Listen({ messageId }: { messageId: string }) {
+function Listen({ messageId, stopKey, onPlay }: { messageId: string; stopKey: number; onPlay: () => void }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
   const [reason, setReason] = useState("");
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -224,6 +247,12 @@ function Listen({ messageId }: { messageId: string }) {
   const busy = useRef(false);
   // 画面から消えたら(別の相談に移ったら)、鳴らさない・止める・後始末する
   const mounted = useRef(true);
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current++;
+    audio.current?.pause();
+    setState("idle");
+  }, [stopKey]);
   useEffect(() => {
     mounted.current = true;
     const el = audio.current;
@@ -244,6 +273,8 @@ function Listen({ messageId }: { messageId: string }) {
       return;
     }
     setReason("");
+    onPlay();
+    const current = generation.current;
     try {
       if (!url.current) {
         busy.current = true;
@@ -263,7 +294,7 @@ function Listen({ messageId }: { messageId: string }) {
             throw new Error(j.error ?? "読み上げできませんでした。少し時間をおいてお試しください");
           }
           const blob = await res.blob();
-          if (!mounted.current) return;
+          if (!mounted.current || current !== generation.current) return;
           url.current = URL.createObjectURL(blob);
           el.src = url.current;
         } finally {
@@ -271,11 +302,11 @@ function Listen({ messageId }: { messageId: string }) {
           busy.current = false;
         }
       }
-      if (!mounted.current) return;
+      if (!mounted.current || current !== generation.current) return;
       await el.play();
-      if (mounted.current) setState("playing");
+      if (mounted.current && current === generation.current) setState("playing");
     } catch (err) {
-      if (!mounted.current) return;
+      if (!mounted.current || current !== generation.current) return;
       setState("error");
       setReason(
         err instanceof DOMException && err.name === "NotAllowedError"

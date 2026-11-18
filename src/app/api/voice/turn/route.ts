@@ -59,6 +59,12 @@ export async function POST(req: Request) {
 
   let conversationId = String(form?.get("conversationId") ?? "");
   if (conversationId && !UUID.test(conversationId)) conversationId = "";
+  let conversationTitle = "";
+  if (conversationId) {
+    const { data } = await supabase.from("conversations").select("id, title").eq("id", conversationId).maybeSingle();
+    if (!data) return Response.json({ error: "会話が見つかりません" }, { status: 404 });
+    conversationTitle = data.title ?? "相談";
+  }
   // 録音の長さ(秒)。費用の記録に使う。届かなければ大きさから見積もる
   const reported = Number(form?.get("durationSec"));
   const sttSeconds = Math.min(600, Math.max(1, Number.isFinite(reported) && reported > 0 ? reported : audio.size / 4000));
@@ -134,6 +140,7 @@ export async function POST(req: Request) {
         }
       };
       send({ type: "heard", conversationId: convId, userText });
+      send({ type: "status", label: "関係する話を整理しています" });
 
       // 3) 書けた文から順に YUKI の声にする。声づくりは 1 文ずつ順番に(同時に頼みすぎない)
       const splitter = new SentenceSplitter();
@@ -208,7 +215,10 @@ export async function POST(req: Request) {
         await supabase.from("messages").insert({ conversation_id: convId, user_id: userId, role: "user", text: userText });
         // YUKI の返事はサーバーだけが書ける(RLS で利用者は role = 'user' しか書けない)
         await admin.from("messages").insert({ conversation_id: convId, user_id: userId, role: "assistant", text: replyText });
-        await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+        await supabase.from("conversations").update({
+          updated_at: new Date().toISOString(),
+          ...(conversationTitle && !conversationTitle.startsWith("(声)") ? { title: `(声)${conversationTitle}` } : {}),
+        }).eq("id", convId);
       }
 
       await speech;
