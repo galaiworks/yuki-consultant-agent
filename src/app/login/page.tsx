@@ -107,6 +107,7 @@ export default function LoginPage() {
             {mode === "password" ? "メールのリンクでログインする" : "パスワードでログインする"}
           </button>
         </form>
+        <p className="muted">チケットコードをお持ちの方は <a href="/signup">こちらから新規登録</a> できます。</p>
         <p className="notice login-notice">このサービスの YUKI は、本人の動画と考え方をもとに作られた AI です(本人公認)。</p>
       </section>
     </main>

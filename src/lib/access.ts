@@ -30,7 +30,10 @@ export function decideAccess(input: {
   defaultPlanId: string;
   usageThisMonthUsd: number;
   now: Date;
+  /** 自分で登録している途中(チケットの引き換えが済んでいない)なら使えない */
+  signupPending?: boolean;
 }): AccessDecision {
+  if (input.signupPending) return { allowed: false, reason: "no_subscription" };
   if (input.isAdmin) {
     return { allowed: true, planId: "admin", source: "admin_role", limitUsd: null };
   }
@@ -83,7 +86,7 @@ export function isAdminUser(role: string | null | undefined, email: string | nul
  */
 export async function getAccessForCurrentUser(
   supabase: SupabaseClient,
-  user: { id: string; email?: string | null },
+  user: { id: string; email?: string | null; app_metadata?: Record<string, unknown> | null },
 ): Promise<AccessDecision> {
   const userId = user.id;
   const [profile, subs, plans, usage] = await Promise.all([
@@ -103,6 +106,8 @@ export async function getAccessForCurrentUser(
     defaultPlanId: appConfig.defaultPlanId,
     usageThisMonthUsd: Number(usage.data ?? 0),
     now: new Date(),
+    // app_metadata は本人が書き換えられない(service role だけが書ける)
+    signupPending: user.app_metadata?.signup_pending === true,
   });
 }
 

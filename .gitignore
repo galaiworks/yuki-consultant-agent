@@ -14,3 +14,4 @@ data/
 # YUKI さんの素材(社外秘)は入れない
 *.jsonl
 yukipedia*/
+.codex-dev/
