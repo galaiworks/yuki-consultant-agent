@@ -76,6 +76,7 @@ export function CreatePassForm({ plans }: { plans: { id: string; name: string }[
       <label htmlFor="p-days">利用できる日数<input id="p-days" name="days" type="number" min={1} defaultValue={30} required /></label>
       <label htmlFor="p-uses">使える人数<input id="p-uses" name="uses" type="number" min={1} defaultValue={1} required /></label>
       <label htmlFor="p-label">メモ(誰向けか)<input id="p-label" name="label" /></label>
+      <label htmlFor="p-code">コードを指定する(任意。空なら自動で作る。英数字 6 文字以上)<input id="p-code" name="code" autoComplete="off" placeholder="例: NLB-WIN" /></label>
       <button type="submit" disabled={pending}>{pending ? "発行中…" : "発行する"}</button>
       <Result state={state} />
     </form>

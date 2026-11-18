@@ -116,6 +116,15 @@ export function normalizePassCode(code: string): string {
   return code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/** チケットコードの最小の長さ(表記ゆれをそろえたあとの英数字の数) */
+export const PASS_CODE_MIN = 6;
+
+/** 管理者が指定したコードを確かめ、そろえた形を返す。だめなら null(テスト対象) */
+export function parseCustomPassCode(raw: string): string | null {
+  const code = normalizePassCode(raw);
+  return code.length >= PASS_CODE_MIN && code.length <= 32 ? code : null;
+}
+
 /** DB に保存するのはコードのハッシュだけ */
 export function hashPassCode(code: string): string {
   return createHash("sha256").update(normalizePassCode(code)).digest("hex");
@@ -138,3 +147,11 @@ export const REDEEM_ERRORS: Record<string, string> = {
   pass_already_redeemed: "このコードはすでに利用済みです。",
   not_authenticated: "ログインしてから入力してください。",
 };
+
+/** コードが合わなかったときに返事を遅らせる時間(総当たりを遅くするため) */
+export const PASS_FAILURE_DELAY_MS = 1000;
+
+/** コードが合わなかったときに少し待つ(テストでは待たない) */
+export async function slowDownAfterBadCode(ms = PASS_FAILURE_DELAY_MS): Promise<void> {
+  if (ms > 0) await new Promise((r) => setTimeout(r, ms));
+}

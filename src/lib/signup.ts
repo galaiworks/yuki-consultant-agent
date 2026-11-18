@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizePassCode } from "@/lib/access";
+import { normalizePassCode, PASS_CODE_MIN } from "@/lib/access";
 import { PASSWORD_MIN } from "@/lib/signup-rules";
 
 export { PASSWORD_MIN };
@@ -11,7 +11,7 @@ export { PASSWORD_MIN };
 
 const SignupInput = z
   .object({
-    code: z.string().transform((v) => normalizePassCode(v)).pipe(z.string().min(8)),
+    code: z.string().transform((v) => normalizePassCode(v)).pipe(z.string().min(PASS_CODE_MIN)),
     email: z.string().trim().toLowerCase().email(),
     name: z.string().trim().max(100).optional(),
     password: z.string().min(PASSWORD_MIN).max(72),

@@ -71,6 +71,9 @@ describe("parseSignup", () => {
   it("確認用と違うパスワードを断る", () => {
     expect(parseSignup({ ...ok, confirm: "different-1" })).toMatchObject({ ok: false, error: expect.stringContaining("一致しません") });
   });
+  it("6 文字のコード(NLB-WIN)を受け付ける", () => {
+    expect(parseSignup({ ...ok, code: "NLB-WIN" })).toMatchObject({ ok: true, value: { code: "NLBWIN" } });
+  });
   it("コードが空なら断る", () => {
     expect(parseSignup({ ...ok, code: "" })).toMatchObject({ ok: false, error: expect.stringContaining("チケットコード") });
   });
