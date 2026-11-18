@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { signUpWithPass, type SignupState } from "@/app/signup/actions";
 import { PASSWORD_MIN } from "@/lib/signup-rules";
+import { InsightsConsentFields } from "@/app/components/insights-consent";
 
 /** チケットコード・メールアドレス・パスワードを入れて登録する */
 export function SignupForm() {
@@ -29,6 +30,7 @@ export function SignupForm() {
         <span className="field-label"><span lang="en">Confirm</span> パスワード(確認)</span>
         <input id="confirm" name="confirm" type="password" required minLength={PASSWORD_MIN} autoComplete="new-password" />
       </label>
+      <InsightsConsentFields disabled={pending} />
       <button className="login-submit" type="submit" disabled={pending}>
         {pending ? "登録中…" : "登録してはじめる"}
       </button>
