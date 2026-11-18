@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideAccess, generatePassCode, hashPassCode, isAdminUser, normalizePassCode, type SubscriptionRow } from "@/lib/access";
+import { decideAccess, generatePassCode, hashPassCode, isAdminUser, normalizePassCode, parseCustomPassCode, type SubscriptionRow } from "@/lib/access";
 import { generateTempPassword } from "@/lib/admin/temp-password";
 
 const plans = [
@@ -85,4 +85,11 @@ describe("generateTempPassword", () => {
       expect(p).not.toMatch(/[01OIlo]/);
     }
   });
+});
+
+describe("parseCustomPassCode: 管理者が指定するコード", () => {
+  it("NLB-WIN を受け付け、表記ゆれをそろえる", () => expect(parseCustomPassCode("nlb-win")).toBe("NLBWIN"));
+  it("指定したコードと、入力されたコードのハッシュが一致する", () => expect(hashPassCode("NLB-WIN")).toBe(hashPassCode("nlb win")));
+  it("短すぎるコードは断る", () => expect(parseCustomPassCode("AB-12")).toBeNull());
+  it("長すぎるコードは断る", () => expect(parseCustomPassCode("A".repeat(33))).toBeNull());
 });
