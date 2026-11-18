@@ -23,7 +23,9 @@ export const DISCLAIMER_PATTERN_SOURCE =
 const DISCLAIMER = new RegExp(DISCLAIMER_PATTERN_SOURCE);
 
 /** 相談者が話を終えようとしている合図(はっきりした言い方だけ) */
-const CLOSING_SIGNALS = [/ありがとう/, /わかりました|分かりました/, /助かりました/, /参考になりました/, /やってみます|試してみます/, /以上です/];
+const CLOSING_SIGNALS = [/ありがとう/, /わかりました|分かりました/, /助かりました/, /参考になりました/, /やってみます|試してみます/, /以上です/, /終わります|終わりにします|失礼します/];
+/** 話を終える意思がはっきりした言い方(最初の発言でも終わりとみなす) */
+const EXPLICIT_END = /終わります|終わりにします|失礼します|以上です/;
 /** 「最後に一つ」のように、最後の質問だと分かる言い方 */
 const LAST_QUESTION = /最後に(一つ|ひとつ|1つ|１つ|だけ|もう|質問|聞|お聞き|確認)/;
 /** 続けたいことが分かる言い方。これがあれば合図とみなさない */
@@ -34,6 +36,11 @@ const QUOTED = /[「『]/;
 /** 断り書きが含まれているか(テスト対象) */
 export function hasDisclaimer(text: string): boolean {
   return DISCLAIMER.test(text);
+}
+
+/** 話を終える意思がはっきりしているか(テスト対象)。「ありがとうございます。〇〇で困っています」のような冒頭のお礼は含めない */
+export function isExplicitEnd(message: string): boolean {
+  return isClosingSignal(message) && EXPLICIT_END.test(message);
 }
 
 /** 話を終えようとしている合図か(テスト対象) */
@@ -66,6 +73,8 @@ export type Pacing = {
   disclaimerUsed: boolean;
   /** 今回の発言が、話を終えようとする合図を含むか */
   closingSignal: boolean;
+  /** 話を終える意思がはっきりしているか(「終わります」「失礼します」など) */
+  explicitEnd: boolean;
 };
 
 /** 履歴と今回の発言から、会話の段階を決める(テスト対象) */
@@ -77,7 +86,7 @@ export function decidePacing(input: PacingInput): Pacing {
   // 話し始めて間もない(2 往復目まで)のお礼では締めない
   const wantsToClose = closingSignal && turn >= MIN_TURN_FOR_SIGNAL;
   const stage: PacingStage = turn >= FIRM_CLOSE_TURN || wantsToClose ? "firm_close" : turn >= SOFT_CLOSE_TURN ? "soft_close" : "explore";
-  return { turn, stage, disclaimerUsed, closingSignal };
+  return { turn, stage, disclaimerUsed, closingSignal, explicitEnd: isExplicitEnd(input.userMessage) };
 }
 
 /** プロンプトに差し込む「この会話の状況」(テスト対象) */
@@ -87,6 +96,13 @@ export function decidePacing(input: PacingInput): Pacing {
  */
 export function pacingInstructions(p: Pacing, seed?: string): string {
   const lines = [`# この会話の状況`, `- 相談者の発言は今回で ${p.turn} 回目です。`];
+  if (p.turn === 1 && p.explicitEnd) {
+    lines.push("- 相談者は最初の発言で話を終えようとしています。振り返りや新しい質問はせず、短く応えて終えます。");
+  } else if (p.turn === 1) {
+    lines.push(
+      "- 新しい相談の最初の返事です。「これまでに覚えていること」に「約束:」があれば、本題に入る前に、その結果を一言で聞きます(例:「前回決めた〇〇、やってみてどうでしたか?」)。できていなくても責めず、できていたら具体的に喜びます。相談者がすでに結果を話している場合は聞き直さず、その結果に反応します。今日の相談がまったく別の話なら、振り返りは一言で済ませて本題に入ります。",
+    );
+  }
   if (p.stage === "explore") {
     lines.push("- まだ話を広げてよい段階です。ただし問いかけは、判断に必要な情報が足りないときだけにします。");
   } else if (p.stage === "soft_close") {

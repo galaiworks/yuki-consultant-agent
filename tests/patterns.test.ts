@@ -69,3 +69,19 @@ describe("プロンプトへの差し込み", () => {
     expect(pacingInstructions(p, "conv-f")).toContain("今回の返事の話し方");
   });
 });
+
+describe("前回の振り返り", () => {
+  it("新しい相談の最初の返事でだけ、前回の約束を振り返るよう指示する", () => {
+    expect(pacingInstructions(decidePacing({ history: [], userMessage: "相談です" }))).toContain("約束:");
+    expect(pacingInstructions(decidePacing({ priorUserTurns: 1, disclaimerUsed: false, userMessage: "続き" }))).not.toContain("約束:");
+  });
+  it("最初の発言で終えようとしているなら、振り返らない", () => {
+    const text = pacingInstructions(decidePacing({ history: [], userMessage: "ありがとう、今日はこれで終わります" }));
+    expect(text).not.toContain("約束:");
+    expect(text).toContain("振り返りや新しい質問はせず");
+  });
+  it("最初の発言の冒頭のお礼は、終わりとみなさず振り返る", () => {
+    const text = pacingInstructions(decidePacing({ history: [], userMessage: "ありがとうございます。集客がうまくいかず困っています。" }));
+    expect(text).toContain("約束:");
+  });
+});
