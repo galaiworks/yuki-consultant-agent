@@ -57,7 +57,7 @@ function stableSystem(persona: Persona): string {
 
 # 守ること
 - YUKI として一人称で話します。ただし中身は YUKI の判断軸と動画にあることだけで、本人が言っていない考え・体験を作りません。AI かどうか聞かれたら、正直に AI だと答えます。
-- 私(YUKI)の考えとして伝える内容は、search_yuki_knowledge で根拠を探して引用します(出典は画面に自動で表示されるので、本文に URL を並べなくてよい)。見つからなければ、一般論だと分かる言い方にします。
+- 私(YUKI)の考えとして伝える内容は、search_yuki_knowledge で根拠を探して引用します(出典は画面に自動で表示されるので、本文に URL を並べなくてよい)。見つからなければ一般論として話します。断り書きを毎回付けず、言い方で自然に分けます。
 - 「【テスト用サンプル】」が付いた資料は動作確認用で、YUKI さんの発言ではありません。引用するときもそう明記します。
 - 法務・税務・会計・投資・ビザ/移民の判断は、方向性の整理までにとどめ、最終判断は専門家(弁護士、税理士、移民弁護士など)に確認するよう伝えます。
 - 「必ず」「絶対」「100%」など結果を保証する表現は使いません。
@@ -111,7 +111,7 @@ function buildTools(deps: LeadDeps, profileSummary: string, persona: Persona) {
       run: async ({ query }) => {
         const hits = await deps.searchKnowledge(query);
         if (hits.length === 0) {
-          return "該当する動画は見つかりませんでした。言い換えて検索し直すか、見つからなければ「動画内に根拠なし(一般論)」と明記して答えてください。";
+          return "該当する動画は見つかりませんでした。言い換えて検索し直してください。それでも見つからなければ、一般論として自然に答えます(断り書きは「この会話の状況」の回数の決まりに従う)。";
         }
         return toSearchResultBlocks(hits);
       },
@@ -186,11 +186,14 @@ export async function runLeadConsultant(input: {
   memories: string[];
   history: { role: "user" | "assistant"; text: string }[];
   userMessage: string;
+  /** pacingInstructions の結果(会話全体の往復数と断り書きの使用状況) */
+  pacing: string;
   persona: Persona;
   deps: LeadDeps;
 }): Promise<{ text: string; citations: Citation[] }> {
   const { deps } = input;
-  const profileText = dynamicSystem(input.profile, input.memories);
+  // 何往復目か・断り書きを使ったか(会話全体から決めたもの)をプロンプトに事実として渡す
+  const profileText = `${dynamicSystem(input.profile, input.memories)}\n${input.pacing}`;
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     ...input.history.map((m) => ({ role: m.role, content: m.text })),

@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { countPacing, decidePacing, pacingFromCounts, pacingInstructions, MODEL_HISTORY_LIMIT } from "@/lib/agents/pacing";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -50,20 +51,26 @@ export async function POST(req: Request) {
     conversationId = data.id as string;
   }
 
-  const [profileRes, memoriesRes, historyRes] = await Promise.all([
+  const [profileRes, memoriesRes, historyRes, pacingCounts] = await Promise.all([
     supabase
       .from("profiles")
       .select("display_name, company_name, industry, annual_revenue_band, us_expansion_status")
       .eq("id", user.id)
       .single(),
     supabase.from("client_memories").select("fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30),
-    supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(20),
+    supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(MODEL_HISTORY_LIMIT),
+    // 数えられなかった項目は安全側に倒す(pacingFromCounts)
+    countPacing(supabase, conversationId).catch(() => pacingFromCounts({ userCount: null, disclaimerCount: null })),
   ]);
 
   const { error: insertErr } = await supabase
     .from("messages")
     .insert({ conversation_id: conversationId, user_id: user.id, role: "user", text: message });
   if (insertErr) return Response.json({ error: "メッセージを保存できませんでした" }, { status: 500 });
+
+  // 往復数と断り書きは会話全体で(件数の上限なしで)数える。モデルには直近分だけを渡す
+  const recentHistory = ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse();
+  const pacing = pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: message }));
 
   const admin = createSupabaseAdminClient();
   // YUKI さんの素材(社外秘)はクライアントから読めない。検索と判断軸はサーバー側の service role で読む
@@ -81,8 +88,9 @@ export async function POST(req: Request) {
         const result = await runLeadConsultant({
           profile: profileRes.data ?? null,
           memories: (memoriesRes.data ?? []).map((m) => m.fact as string).reverse(),
-          history: ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse(),
+          history: recentHistory,
           userMessage: message,
+          pacing,
           persona,
           deps: {
             searchKnowledge: (q) => searchKnowledge(admin, q),

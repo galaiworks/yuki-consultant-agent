@@ -1,4 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { countPacing, decidePacing, pacingFromCounts, pacingInstructions } from "@/lib/agents/pacing";
+
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getAccessForCurrentUser } from "@/lib/access";
 import { appConfig, VOICE } from "@/lib/config";
@@ -8,6 +10,9 @@ import { loadPersona } from "@/lib/persona";
 import { runVoiceReply } from "@/lib/agents/voice";
 import { synthesize, toSpeakable, transcribe } from "@/lib/voice/elevenlabs";
 import { addThinkingPauses, bracketDepth, endsWithQuestion, SentenceSplitter, type VoiceEvent } from "@/lib/voice/sentences";
+
+/** 声の返事でモデルに渡す直近の件数 */
+const VOICE_HISTORY_LIMIT = 12;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,20 +91,25 @@ export async function POST(req: Request) {
     conversationId = data.id as string;
   }
   // 文字起こしの費用は、このあと返事に失敗しても記録する(待ち時間を増やさないよう、準備と同時に行う)
-  const [, persona, profile, memories, historyRes, hits] = await Promise.all([
+  const [, persona, profile, memories, historyRes, hits, pacingCounts] = await Promise.all([
     recordSpeechUsage(admin, { userId: user.id, conversationId }, "voice_stt", VOICE.sttModel, computeSpeechCost({ sttSeconds })),
     loadPersona(admin),
     supabase.from("profiles").select("display_name, company_name, industry").eq("id", user.id).single(),
     supabase.from("client_memories").select("fact").eq("user_id", user.id).order("created_at", { ascending: false }).limit(20),
-    supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(12),
+    supabase.from("messages").select("role, text").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(VOICE_HISTORY_LIMIT),
     // 「はい」「なるほど」のような短い相づちでは動画を探さない(待ち時間を減らす)
     userText.length < SHORT_UTTERANCE ? Promise.resolve([]) : searchKnowledge(admin, userText, 4).catch(() => []),
+    // 往復数と断り書きは会話全体で数える。数えられなかった項目は安全側に倒す
+    countPacing(supabase, conversationId).catch(() => pacingFromCounts({ userCount: null, disclaimerCount: null })),
   ]);
   const p = (profile.data ?? {}) as { display_name?: string | null; company_name?: string | null; industry?: string | null };
+  // 声は短く返すので、モデルには直近の数件だけを渡す
+  const recentHistory = ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse();
   const context = [
     `今日の日付: ${new Date().toISOString().slice(0, 10)}`,
     `# 相談者\n- 名前: ${p.display_name ?? "未登録"}\n- 会社: ${p.company_name ?? "未登録"}\n- 業種: ${p.industry ?? "未登録"}`,
     `# これまでに覚えていること\n${(memories.data ?? []).map((m) => `- ${m.fact as string}`).join("\n") || "- まだありません"}`,
+    pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: userText })),
   ].join("\n");
 
   mark("context_ms");
@@ -172,7 +182,7 @@ export async function POST(req: Request) {
         replyText = await runVoiceReply({
           persona,
           context,
-          history: ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse(),
+          history: recentHistory,
           userMessage: userText,
           hits: hits.filter((h) => !h.is_test),
           usage: (agent, model, u) => recordUsage(admin, ctx, agent, model, u),

@@ -1,4 +1,5 @@
 import { currentUserIsAdmin } from "@/lib/admin/guard";
+import { decidePacing, pacingInstructions } from "@/lib/agents/pacing";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recordUsage } from "@/lib/usage";
 import { searchKnowledge } from "@/lib/knowledge/search";
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
       memories: [],
       history: [],
       userMessage: c.prompt,
+      pacing: pacingInstructions(decidePacing({ history: [], userMessage: c.prompt })),
       persona,
       deps: {
         searchKnowledge: (q) => {
