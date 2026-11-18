@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { patternInstructions, pickPatterns } from "@/lib/agents/patterns";
 
 /**
  * 会話の「締め方」と「断り書き」の回数を、履歴から機械的に決める。
@@ -80,7 +81,11 @@ export function decidePacing(input: PacingInput): Pacing {
 }
 
 /** プロンプトに差し込む「この会話の状況」(テスト対象) */
-export function pacingInstructions(p: Pacing): string {
+/**
+ * プロンプトに差し込む「この会話の状況」(テスト対象)。
+ * seed(会話 ID など)を渡すと、今回の返事で使う話し方の候補も添える
+ */
+export function pacingInstructions(p: Pacing, seed?: string): string {
   const lines = [`# この会話の状況`, `- 相談者の発言は今回で ${p.turn} 回目です。`];
   if (p.stage === "explore") {
     lines.push("- まだ話を広げてよい段階です。ただし問いかけは、判断に必要な情報が足りないときだけにします。");
@@ -102,6 +107,7 @@ export function pacingInstructions(p: Pacing): string {
       ? "- この会話では「動画では話していない」という断り書きをすでに使いました。もう繰り返さず、一般論は自然な言い方でそのまま話します。"
       : "- 「動画では話していない」という断り書きは、この会話で 1 回までです。",
   );
+  if (seed) lines.push("", patternInstructions(pickPatterns(seed, p.turn, p.stage)));
   return lines.join("\n");
 }
 

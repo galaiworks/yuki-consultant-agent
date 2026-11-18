@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       memories: [],
       history: [],
       userMessage: c.prompt,
-      pacing: pacingInstructions(decidePacing({ history: [], userMessage: c.prompt })),
+      pacing: pacingInstructions(decidePacing({ history: [], userMessage: c.prompt }), c.prompt),
       persona,
       deps: {
         searchKnowledge: (q) => {
