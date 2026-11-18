@@ -70,7 +70,7 @@ export async function POST(req: Request) {
 
   // 往復数と断り書きは会話全体で(件数の上限なしで)数える。モデルには直近分だけを渡す
   const recentHistory = ((historyRes.data ?? []) as { role: "user" | "assistant"; text: string }[]).reverse();
-  const pacing = pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: message }));
+  const pacing = pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: message }), conversationId);
 
   const admin = createSupabaseAdminClient();
   // YUKI さんの素材(社外秘)はクライアントから読めない。検索と判断軸はサーバー側の service role で読む

@@ -109,7 +109,7 @@ export async function POST(req: Request) {
     `今日の日付: ${new Date().toISOString().slice(0, 10)}`,
     `# 相談者\n- 名前: ${p.display_name ?? "未登録"}\n- 会社: ${p.company_name ?? "未登録"}\n- 業種: ${p.industry ?? "未登録"}`,
     `# これまでに覚えていること\n${(memories.data ?? []).map((m) => `- ${m.fact as string}`).join("\n") || "- まだありません"}`,
-    pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: userText })),
+    pacingInstructions(decidePacing({ history: recentHistory, ...pacingCounts, userMessage: userText }), conversationId),
   ].join("\n");
 
   mark("context_ms");
