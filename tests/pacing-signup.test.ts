@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DISCLAIMER_PATTERN_SOURCE, decidePacing, pacingFromCounts, hasDisclaimer, isClosingSignal, pacingInstructions, FIRM_CLOSE_TURN, SOFT_CLOSE_TURN } from "@/lib/agents/pacing";
 import { isReservedEmail, parseSignup, passProblem } from "@/lib/signup";
 import { decideAccess } from "@/lib/access";
+import { LOGIN_CODE_PATTERN, normalizeLoginCode } from "@/lib/login-code";
 
 /** n 往復ぶんの履歴を作る */
 const turns = (n: number, assistantText = "なるほど。") =>
@@ -60,16 +61,13 @@ describe("pacingInstructions", () => {
 });
 
 describe("parseSignup", () => {
-  const ok = { code: "abcd-efgh-jkmn-pqrs", email: " Yuki@Example.com ", password: "secret-123", confirm: "secret-123" };
-  it("正しい入力を受け付け、コードとメールをそろえる", () => {
+  const ok = { code: "abcd-efgh-jkmn-pqrs", email: " Yuki@Example.com " };
+  it("正しい入力を受け付け、コードとメールをそろえる(パスワードは要らない)", () => {
     const r = parseSignup(ok);
-    expect(r).toEqual({ ok: true, value: { code: "ABCDEFGHJKMNPQRS", email: "yuki@example.com", name: undefined, password: "secret-123" } });
+    expect(r).toEqual({ ok: true, value: { code: "ABCDEFGHJKMNPQRS", email: "yuki@example.com", name: undefined } });
   });
-  it("短いパスワードを断る", () => {
-    expect(parseSignup({ ...ok, password: "short", confirm: "short" })).toMatchObject({ ok: false, error: expect.stringContaining("8 文字以上") });
-  });
-  it("確認用と違うパスワードを断る", () => {
-    expect(parseSignup({ ...ok, confirm: "different-1" })).toMatchObject({ ok: false, error: expect.stringContaining("一致しません") });
+  it("メールアドレスが正しくなければ断る", () => {
+    expect(parseSignup({ ...ok, email: "yuki" })).toMatchObject({ ok: false, error: expect.stringContaining("メールアドレス") });
   });
   it("6 文字のコード(NLB-WIN)を受け付ける", () => {
     expect(parseSignup({ ...ok, code: "NLB-WIN" })).toMatchObject({ ok: true, value: { code: "NLBWIN" } });
@@ -77,6 +75,15 @@ describe("parseSignup", () => {
   it("コードが空なら断る", () => {
     expect(parseSignup({ ...ok, code: "" })).toMatchObject({ ok: false, error: expect.stringContaining("チケットコード") });
   });
+});
+
+describe("normalizeLoginCode: メールのコードの入力ゆれをそろえる", () => {
+  it.each([["123456", "123456"], ["123 456", "123456"], ["１２３４５６", "123456"], ["123-456", "123456"]])("%s → %s", (raw, want) => {
+    expect(normalizeLoginCode(raw)).toBe(want);
+    expect(LOGIN_CODE_PATTERN.test(normalizeLoginCode(raw))).toBe(true);
+  });
+  it("数字以外が残れば通さない", () => expect(LOGIN_CODE_PATTERN.test(normalizeLoginCode("12a456"))).toBe(false));
+  it("短すぎれば通さない", () => expect(LOGIN_CODE_PATTERN.test(normalizeLoginCode("12345"))).toBe(false));
 });
 
 describe("passProblem", () => {

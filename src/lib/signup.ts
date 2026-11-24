@@ -1,11 +1,8 @@
 import { z } from "zod";
 import { normalizePassCode, PASS_CODE_MIN } from "@/lib/access";
-import { PASSWORD_MIN } from "@/lib/signup-rules";
-
-export { PASSWORD_MIN };
 
 /**
- * 特別チケットのコードを持つ人だけが、自分でメールアドレスとパスワードを決めて登録できる。
+ * 特別チケットのコードを持つ人だけが、自分のメールアドレスで登録できる(パスワードは決めない。ログインはメールの 6 桁コード)。
  * 誰でも登録できる窓口にはしない(有料クライアント限定のため)。
  */
 
@@ -14,25 +11,20 @@ const SignupInput = z
     code: z.string().transform((v) => normalizePassCode(v)).pipe(z.string().min(PASS_CODE_MIN)),
     email: z.string().trim().toLowerCase().email(),
     name: z.string().trim().max(100).optional(),
-    password: z.string().min(PASSWORD_MIN).max(72),
-    confirm: z.string(),
-  })
-  .refine((v) => v.password === v.confirm, { path: ["confirm"] });
+  });
 
-export type SignupValues = { code: string; email: string; name?: string; password: string };
+export type SignupValues = { code: string; email: string; name?: string };
 
 /** 入力を確かめ、だめなら相談者に見せる文を返す(テスト対象) */
 export function parseSignup(raw: Record<string, unknown>): { ok: true; value: SignupValues } | { ok: false; error: string } {
   const r = SignupInput.safeParse(raw);
   if (r.success) {
-    const { code, email, name, password } = r.data;
-    return { ok: true, value: { code, email, name: name || undefined, password } };
+    const { code, email, name } = r.data;
+    return { ok: true, value: { code, email, name: name || undefined } };
   }
   const field = r.error.issues[0]?.path[0];
   if (field === "code") return { ok: false, error: "チケットコードを正しく入力してください。" };
   if (field === "email") return { ok: false, error: "メールアドレスを正しく入力してください。" };
-  if (field === "password") return { ok: false, error: `パスワードは ${PASSWORD_MIN} 文字以上にしてください。` };
-  if (field === "confirm") return { ok: false, error: "確認用のパスワードが一致しません。" };
   return { ok: false, error: "入力内容を確認してください。" };
 }
 

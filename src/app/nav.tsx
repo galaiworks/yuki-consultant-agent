@@ -3,8 +3,7 @@ import { currentUserIsAdmin } from "@/lib/admin/guard";
 
 /** ログイン後の共通ナビ */
 export async function Nav() {
-  const { user, isAdmin } = await currentUserIsAdmin();
-  const mustChange = Boolean(user?.user_metadata?.must_change_password);
+  const { isAdmin } = await currentUserIsAdmin();
   return (
     <>
       <nav className="nav" aria-label="メインナビゲーション">
@@ -31,11 +30,7 @@ export async function Nav() {
           {isAdmin && <Link className="nav-tab" href="/admin"><span className="nav-icon" aria-hidden="true">◇</span><span className="nav-label" lang="en">Admin</span><small>管理</small></Link>}
         </div>
       </nav>
-      {mustChange && (
-        <p className="notice">
-          仮パスワードでログインしています。<Link href="/account">アカウント</Link>から自分のパスワードに変更してください。
-        </p>
-      )}
+
     </>
   );
 }

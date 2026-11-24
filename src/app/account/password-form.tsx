@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
-/** 最初にお渡しした仮パスワードを、自分のパスワードに変える */
+/** パスワードでも入りたい人が、自分のパスワードを決める(任意。ふだんはメールの 6 桁コードで入れる) */
 export function PasswordForm() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -39,7 +39,8 @@ export function PasswordForm() {
 
   return (
     <form className="card" onSubmit={onSubmit}>
-      <h2 style={{ fontSize: 18 }}>パスワードを変更</h2>
+      <h2 style={{ fontSize: 18 }}>パスワード(任意)</h2>
+      <p className="muted">ふだんはメールに届く 6 桁の数字でログインできるので、決めなくても使えます。パスワードでも入りたいときだけ設定してください。</p>
       <label htmlFor="new-password">
         新しいパスワード(10 文字以上)
         <input id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />

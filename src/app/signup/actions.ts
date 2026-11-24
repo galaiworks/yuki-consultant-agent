@@ -12,8 +12,10 @@ export type SignupState = { error?: string };
 const FAILED = "登録できませんでした。時間をおいてもう一度お試しください。";
 
 /**
- * 特別チケットのコードで新規登録し、そのままログインして相談画面へ進む。
+ * 特別チケットのコードで新規登録し、そのままログインして相談画面へ進む(パスワードは決めない)。
  * 1. 入力とチケットを確かめる 2. メール確認済みの利用者を作る 3. ログインする 4. チケットを使う
+ * 3 のログインは、サーバーで作ったワンタイムの合い言葉をその場で使う(メールは送らない)。
+ * 次回からは、ログイン画面でメールに届く 6 桁のコードを入れて入る
  * 3・4 で失敗したら、作った利用者を消して元に戻す(コードを使わずに利用者だけ残さないため)
  */
 export async function signUpWithPass(_prev: SignupState, form: FormData): Promise<SignupState> {
@@ -21,8 +23,6 @@ export async function signUpWithPass(_prev: SignupState, form: FormData): Promis
     code: form.get("code") ?? "",
     email: form.get("email") ?? "",
     name: form.get("name") || undefined,
-    password: form.get("password") ?? "",
-    confirm: form.get("confirm") ?? "",
   });
   if (!parsed.ok) return { error: parsed.error };
   const v = parsed.value;
@@ -43,7 +43,6 @@ export async function signUpWithPass(_prev: SignupState, form: FormData): Promis
 
   const { data: created, error: cErr } = await admin.auth.admin.createUser({
     email: v.email,
-    password: v.password,
     email_confirm: true,
     // チケットの引き換えが済むまでは使えない印。途中で失敗して利用者が残っても、相談はできない
     app_metadata: { signup_pending: true },
@@ -74,7 +73,12 @@ export async function signUpWithPass(_prev: SignupState, form: FormData): Promis
   let redeemed = false;
   try {
     const supabase = await createSupabaseServerClient();
-    const { error: sErr } = await supabase.auth.signInWithPassword({ email: v.email, password: v.password });
+    // メールを送らずにワンタイムの合い言葉を作り、その場でログインに使う(登録した本人のブラウザに Cookie が付く)
+    const { data: link, error: lErr } = await admin.auth.admin.generateLink({ type: "magiclink", email: v.email });
+    const tokenHash = link?.properties?.hashed_token;
+    const { error: sErr } = lErr || !tokenHash
+      ? { error: lErr ?? new Error("no_token") }
+      : await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "email" });
     if (sErr) {
       await undo();
       return { error: FAILED };
