@@ -5,11 +5,13 @@
 export async function embedTexts(
   texts: string[],
   inputType: "query" | "document",
+  signal?: AbortSignal,
 ): Promise<number[][] | null> {
   const key = process.env.VOYAGE_API_KEY;
   if (!key || texts.length === 0) return null;
   const res = await fetch("https://api.voyageai.com/v1/embeddings", {
     method: "POST",
+    signal,
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model: process.env.VOYAGE_MODEL ?? "voyage-multilingual-2",

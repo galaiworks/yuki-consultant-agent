@@ -18,13 +18,15 @@ export async function searchKnowledge(
   supabase: SupabaseClient,
   query: string,
   matchCount = 6,
+  signal?: AbortSignal,
 ): Promise<KnowledgeHit[]> {
-  const vec = (await embedTexts([query], "query"))?.[0];
-  const { data, error } = await supabase.rpc("search_knowledge", {
+  const vec = (await embedTexts([query], "query", signal))?.[0];
+  const request = supabase.rpc("search_knowledge", {
     query_text: query,
     query_embedding: vec ? toPgVector(vec) : null,
     match_count: matchCount,
   });
+  const { data, error } = await (signal ? request.abortSignal(signal) : request);
   if (error) throw new Error(`ナレッジ検索に失敗しました: ${error.message}`);
   return (data ?? []) as KnowledgeHit[];
 }

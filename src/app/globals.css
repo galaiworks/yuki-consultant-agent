@@ -56,6 +56,8 @@ body:has(.chat-page) .nav-tab[href="/chat"], body:has(.voice-page) .nav-tab[href
 .notice { border-left: 2px solid var(--gold-lo); padding: 4px 0 4px 14px; color: var(--muted); font-size: 13px; line-height: 1.9; }
 .error { color: var(--danger); overflow-wrap: anywhere; }
 label { display: flex; flex-direction: column; gap: 8px; font-weight: 500; }
+.consent-check { flex-direction: row; align-items: flex-start; gap: 10px; font-size: 13px; }
+.consent-check input { flex: none; width: 18px; height: 18px; margin: 5px 0 0; accent-color: var(--gold); }
 input, textarea, select { max-width: 100%; min-width: 0; font: inherit; color: var(--ink); background: var(--surface2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 textarea { width: 100%; resize: vertical; min-height: 100px; }
