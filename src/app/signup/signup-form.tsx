@@ -2,17 +2,16 @@
 
 import { useActionState } from "react";
 import { signUpWithPass, type SignupState } from "@/app/signup/actions";
-import { PASSWORD_MIN } from "@/lib/signup-rules";
 import { InsightsConsentFields } from "@/app/components/insights-consent";
 
-/** チケットコード・メールアドレス・パスワードを入れて登録する */
+/** チケットコードとメールアドレスを入れて登録する(パスワードは決めない) */
 export function SignupForm() {
   const [state, action, pending] = useActionState<SignupState, FormData>(signUpWithPass, {});
   return (
     <form className="card login-form" action={action}>
       <label className="login-field" htmlFor="code">
         <span className="field-label"><span lang="en">Code</span> チケットコード</span>
-        <input id="code" name="code" required placeholder="ABCD-EFGH-JKLM-NPQR" autoComplete="off" />
+        <input id="code" name="code" required placeholder="NLB-WIN" autoComplete="off" autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
       </label>
       <label className="login-field" htmlFor="name">
         <span className="field-label"><span lang="en">Name</span> お名前(任意)</span>
@@ -20,15 +19,7 @@ export function SignupForm() {
       </label>
       <label className="login-field" htmlFor="email">
         <span className="field-label"><span lang="en">Email</span> メールアドレス</span>
-        <input id="email" name="email" type="email" required autoComplete="email" />
-      </label>
-      <label className="login-field" htmlFor="password">
-        <span className="field-label"><span lang="en">Password</span> パスワード({PASSWORD_MIN} 文字以上)</span>
-        <input id="password" name="password" type="password" required minLength={PASSWORD_MIN} autoComplete="new-password" />
-      </label>
-      <label className="login-field" htmlFor="confirm">
-        <span className="field-label"><span lang="en">Confirm</span> パスワード(確認)</span>
-        <input id="confirm" name="confirm" type="password" required minLength={PASSWORD_MIN} autoComplete="new-password" />
+        <input id="email" name="email" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoComplete="email" />
       </label>
       <InsightsConsentFields disabled={pending} />
       <button className="login-submit" type="submit" disabled={pending}>
