@@ -4,21 +4,21 @@ import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { normalizeLoginCode, LOGIN_CODE_PATTERN } from "@/lib/login-code";
+import { normalizeLoginCode, LOGIN_CODE_PATTERN, sendErrorMessage } from "@/lib/login-code";
 
-/** email: メールアドレスを入れる / code: 届いた数字を入れる / password: パスワードをお持ちの方 */
-type Step = "email" | "code" | "password";
+/** email: メールアドレスを入れる / code: 届いた数字を入れる */
+type Step = "email" | "code";
 
 /**
- * ログイン画面。基本は「メールアドレス → メールに届く 6 桁のコード」で入る(パスワードを覚えなくてよい)。
- * 以前に決めたパスワードがある人のために、パスワードでも入れる道を小さく残す。
+ * ログイン画面。「メールアドレス → メールに届く 6 桁のコード」の 1 通りに統一する(パスワードは使わない)。
  */
 export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
+  // コードを送った先。表示・確認・再送はこのアドレスを使い、入力欄を後から変えてもずれないようにする
+  const [sentTo, setSentTo] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState("");
   const [error, setError] = useState("");
@@ -31,7 +31,7 @@ export default function LoginPage() {
   }, []);
 
   /** ログイン用のコードをメールで送る。メールのリンクも、どのブラウザで開いても通るようにする */
-  async function sendCode() {
+  async function sendCode(to: string) {
     setBusy(true);
     setError("");
     setInfo("");
@@ -40,7 +40,7 @@ export default function LoginPage() {
       auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     const { error: err } = await linkClient.auth.signInWithOtp({
-      email: email.trim(),
+      email: to,
       options: {
         // 登録済みの人だけ(新規登録はチケットコードの画面から)
         shouldCreateUser: false,
@@ -49,16 +49,13 @@ export default function LoginPage() {
     });
     setBusy(false);
     if (err) {
-      setError(
-        err.status === 429
-          ? "続けて送りすぎました。1 分ほど待ってから、もう一度お試しください。"
-          : "このメールアドレスは登録されていません。登録がまだの方は、下の「新規登録」からお進みください。",
-      );
+      setError(sendErrorMessage(err));
       return;
     }
+    setSentTo(to);
     setCode("");
     setStep("code");
-    setInfo(`${email.trim()} に、ログイン用の 6 桁の数字を送りました。メールを開いて、数字を入力してください。`);
+    setInfo(`${to} に、ログイン用の 6 桁の数字を送りました。メールを開いて、数字を入力してください。`);
   }
 
   /** 届いたコードを確かめてログインする */
@@ -71,7 +68,7 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     const supabase = createSupabaseBrowserClient();
-    const { error: err } = await supabase.auth.verifyOtp({ email: email.trim(), token, type: "email" });
+    const { error: err } = await supabase.auth.verifyOtp({ email: sentTo, token, type: "email" });
     if (err) {
       setBusy(false);
       setError("数字が違うか、期限が切れています。いちばん新しいメールの数字を入力するか、「コードを送り直す」を押してください。");
@@ -81,24 +78,10 @@ export default function LoginPage() {
     router.refresh();
   }
 
-  async function signInWithPassword() {
-    setBusy(true);
-    setError("");
-    const { error: err } = await createSupabaseBrowserClient().auth.signInWithPassword({ email: email.trim(), password });
-    if (err) {
-      setBusy(false);
-      setError("メールアドレスかパスワードが違います。パスワードがわからないときは「メールのコードでログインする」をお使いください。");
-      return;
-    }
-    router.replace("/chat");
-    router.refresh();
-  }
-
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (step === "email") void sendCode();
-    else if (step === "code") void verifyCode();
-    else void signInWithPassword();
+    if (step === "email") void sendCode(email.trim());
+    else void verifyCode();
   }
 
   function goTo(next: Step) {
@@ -107,9 +90,7 @@ export default function LoginPage() {
     setInfo("");
   }
 
-  const submitLabel = busy
-    ? "確認中…"
-    : step === "email" ? "ログインコードを送る" : step === "code" ? "ログイン" : "パスワードでログイン";
+  const submitLabel = busy ? "確認中…" : step === "email" ? "ログインコードを送る" : "ログイン";
 
   return (
     <main className="shell login-shell">
@@ -135,8 +116,8 @@ export default function LoginPage() {
               spellCheck={false}
               required
               autoComplete="email"
-              value={email}
-              readOnly={step === "code"}
+              value={step === "code" ? sentTo : email}
+              readOnly={step === "code" || busy}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
@@ -148,19 +129,12 @@ export default function LoginPage() {
                 className="login-code"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                pattern="[0-9 ]*"
                 maxLength={12}
                 required
                 autoFocus
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => setCode(normalizeLoginCode(e.target.value))}
               />
-            </label>
-          )}
-          {step === "password" && (
-            <label className="login-field" htmlFor="password">
-              <span className="field-label"><span lang="en">Password</span> パスワード</span>
-              <input id="password" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </label>
           )}
           <button className="login-submit" type="submit" disabled={busy}>{submitLabel}</button>
@@ -168,15 +142,10 @@ export default function LoginPage() {
           {error && <p className="error" role="alert">{error}</p>}
           {step === "code" && (
             <div className="login-links">
-              <button type="button" className="secondary" disabled={busy} onClick={() => void sendCode()}>コードを送り直す</button>
+              <button type="button" className="secondary" disabled={busy} onClick={() => void sendCode(sentTo)}>コードを送り直す</button>
               <button type="button" className="secondary" disabled={busy} onClick={() => goTo("email")}>メールアドレスを直す</button>
             </div>
           )}
-          {step === "password" ? (
-            <button type="button" className="secondary" onClick={() => goTo("email")}>メールのコードでログインする</button>
-          ) : step === "email" ? (
-            <button type="button" className="login-text-link" onClick={() => goTo("password")}>パスワードをお持ちの方はこちら</button>
-          ) : null}
         </form>
         <p className="muted">はじめての方は、チケットコードで <a href="/signup">新規登録</a> してください。</p>
         <p className="notice login-notice">このサービスの YUKI は、本人の動画と考え方をもとに作られた AI です(本人公認)。</p>

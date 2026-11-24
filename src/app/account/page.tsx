@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Nav } from "@/app/nav";
-import { PasswordForm } from "@/app/account/password-form";
 import { InsightsConsentForm } from "@/app/account/insights-form";
 
 export default async function AccountPage() {
@@ -17,7 +16,7 @@ export default async function AccountPage() {
       <Nav />
       <h1>アカウント</h1>
       <p className="muted">{user.email}</p>
-      <PasswordForm />
+      <p className="muted">ログインは、メールに届く 6 桁の数字で行います(パスワードは使いません)。</p>
       {profile.error ? <p className="error">相談の傾向の同意設定を読み込めませんでした。時間をおいて再度お試しください。</p>
         : <InsightsConsentForm consent={profile.data?.insights_consent === true} />}
     </main>

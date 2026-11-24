@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { signUpWithPass } from "@/app/signup/actions";
 
-const state = vi.hoisted(() => ({ profileUpdate: vi.fn(), createUser: vi.fn(), verifyOtp: vi.fn(), consentError: false }));
+const state = vi.hoisted(() => ({
+  profileUpdate: vi.fn(), createUser: vi.fn(), verifyOtp: vi.fn(), deleteUser: vi.fn(), generateLink: vi.fn(), signOut: vi.fn(),
+  consentError: false, createError: null as null | { message: string }, linkError: false, noHash: false, otpError: false, rpcError: false,
+}));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(`redirect:${url}`); } }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: () => ({
   from: () => {
@@ -9,15 +12,26 @@ vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: () => ({
     return query;
   },
   auth: { admin: {
-    createUser: async (attrs: unknown) => { state.createUser(attrs); return { data: { user: { id: "new-student" } }, error: null }; },
-    generateLink: async () => ({ data: { properties: { hashed_token: "hashed-token" } }, error: null }),
-    deleteUser: async () => ({ error: null }),
+    createUser: async (attrs: unknown) => {
+      state.createUser(attrs);
+      return state.createError ? { data: { user: null }, error: state.createError } : { data: { user: { id: "new-student" } }, error: null };
+    },
+    generateLink: async () => {
+      state.generateLink();
+      if (state.linkError) return { data: null, error: { message: "boom" } };
+      return { data: { properties: { hashed_token: state.noHash ? undefined : "hashed-token" } }, error: null };
+    },
+    deleteUser: async (id: string) => { state.deleteUser(id); return { error: null }; },
     updateUserById: async () => ({ error: null }),
   } },
 }) }));
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: async () => ({
-  auth: { verifyOtp: async (args: unknown) => { state.verifyOtp(args); return { error: null }; }, refreshSession: async () => ({ error: null }), signOut: async () => ({ error: null }) },
-  rpc: async () => ({ error: null }),
+  auth: {
+    verifyOtp: async (args: unknown) => { state.verifyOtp(args); return { error: state.otpError ? { message: "invalid" } : null }; },
+    refreshSession: async () => ({ error: null }),
+    signOut: async () => { state.signOut(); return { error: null }; },
+  },
+  rpc: async () => ({ error: state.rpcError ? { message: "pass_used_up" } : null }),
   from: () => {
     const query = {
       update(value: unknown) { state.profileUpdate(value); return query; }, eq() { return query; }, select() { return query; },
@@ -35,7 +49,10 @@ function signupForm(consent = false) {
   return form;
 }
 
-beforeEach(() => { vi.clearAllMocks(); state.consentError = false; });
+beforeEach(() => {
+  vi.clearAllMocks();
+  Object.assign(state, { consentError: false, createError: null, linkError: false, noHash: false, otpError: false, rpcError: false });
+});
 describe("登録時の任意同意", () => {
   it("チェックしない登録では同意を更新しない", async () => {
     await expect(signUpWithPass({}, signupForm())).rejects.toThrow("redirect:/chat");
@@ -56,5 +73,33 @@ describe("パスワードなしの登録", () => {
     await expect(signUpWithPass({}, signupForm())).rejects.toThrow("redirect:/chat");
     expect(state.createUser).toHaveBeenCalledWith(expect.not.objectContaining({ password: expect.anything() }));
     expect(state.verifyOtp).toHaveBeenCalledWith({ token_hash: "hashed-token", type: "email" });
+  });
+});
+
+describe("パスワードなしの登録: 失敗したら元に戻す", () => {
+  it("すでに登録済みなら、合い言葉を作らずに案内する", async () => {
+    state.createError = { message: "User already registered" };
+    expect(await signUpWithPass({}, signupForm())).toHaveProperty("error", expect.stringContaining("すでに登録"));
+    expect(state.generateLink).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["合い言葉を作れない", () => { state.linkError = true; }],
+    ["合い言葉が空", () => { state.noHash = true; }],
+    ["その場のログインに失敗", () => { state.otpError = true; }],
+  ])("%s → 作った利用者を消してチケットを使わない", async (_label, setup) => {
+    setup();
+    expect(await signUpWithPass({}, signupForm())).toHaveProperty("error");
+    expect(state.deleteUser).toHaveBeenCalledWith("new-student");
+  });
+  it("チケットの引き換えに失敗 → ログアウトして利用者を消す", async () => {
+    state.rpcError = true;
+    expect(await signUpWithPass({}, signupForm())).toHaveProperty("error");
+    expect(state.signOut).toHaveBeenCalled();
+    expect(state.deleteUser).toHaveBeenCalledWith("new-student");
+  });
+  it("引き換えが済んだあとの失敗では、利用者を消さない", async () => {
+    state.consentError = true;
+    await signUpWithPass({}, signupForm(true));
+    expect(state.deleteUser).not.toHaveBeenCalled();
   });
 });

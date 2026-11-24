@@ -106,7 +106,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .login-links { display: flex; gap: 10px; flex-wrap: wrap; }
 .login-links .secondary { flex: 1 1 140px; font-size: 12px; }
 .login-code { font-size: 26px; letter-spacing: .3em; font-variant-numeric: tabular-nums; }
-.login-text-link { background: none; border: 0; padding: 4px 0; color: var(--muted); font-size: 12px; text-decoration: underline; min-height: 0; }
 .login-notice { font-size: 11px; text-align: center; border: 0; padding: 0; }
 
 /* 相談者には淡い金、YUKI の回答には写真と黒い吹き出しを添える。 */

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DISCLAIMER_PATTERN_SOURCE, decidePacing, pacingFromCounts, hasDisclaimer, isClosingSignal, pacingInstructions, FIRM_CLOSE_TURN, SOFT_CLOSE_TURN } from "@/lib/agents/pacing";
 import { isReservedEmail, parseSignup, passProblem } from "@/lib/signup";
 import { decideAccess } from "@/lib/access";
-import { LOGIN_CODE_PATTERN, normalizeLoginCode } from "@/lib/login-code";
+import { LOGIN_CODE_PATTERN, normalizeLoginCode, sendErrorMessage } from "@/lib/login-code";
 
 /** n 往復ぶんの履歴を作る */
 const turns = (n: number, assistantText = "なるほど。") =>
@@ -154,4 +154,14 @@ describe("pacingFromCounts: 数えられなかったときは安全側", () => {
   it("断り書きを数えられなければ使用済み扱い(繰り返さない)", () => expect(pacingFromCounts({ userCount: 11, disclaimerCount: null })).toEqual({ priorUserTurns: 11, disclaimerUsed: true }));
   it("往復数を数えられなければ履歴で数える(値を渡さない)", () => expect(pacingFromCounts({ userCount: null, disclaimerCount: 0 })).toEqual({ disclaimerUsed: false }));
   it("両方数えられれば、その値を使う", () => expect(pacingFromCounts({ userCount: 3, disclaimerCount: 2 })).toEqual({ priorUserTurns: 3, disclaimerUsed: true }));
+});
+
+describe("sendErrorMessage: 送れなかった理由を取り違えない", () => {
+  it("未登録", () => expect(sendErrorMessage({ status: 422, code: "otp_disabled", message: "Signups not allowed for otp" })).toContain("登録されていません"));
+  it("送りすぎ", () => expect(sendErrorMessage({ status: 429 })).toContain("送りすぎ"));
+  it("通信やメールの障害は「未登録」と言わない", () => {
+    const m = sendErrorMessage({ status: 500, message: "Error sending magic link email" });
+    expect(m).toContain("送れませんでした");
+    expect(m).not.toContain("登録されていません");
+  });
 });
